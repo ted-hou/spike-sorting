@@ -8,7 +8,7 @@ cimport numpy as np
 from libc.math cimport log2
 
 DEF SQRT2 = 1.414213562373095
-def _haart_1d_loop(np.float64_t[:, ::1] x_in):
+def _haart_1d_loop(np.float64_t[:, ::1] x_in, bint orthogonal):
     cdef:
         int n_signals, length, j
         np.float64_t[:, ::1] x, y
@@ -27,10 +27,15 @@ def _haart_1d_loop(np.float64_t[:, ::1] x_in):
         while True:
             for i in range(n_signals):
                 for j in range(length):
-                    y[i, j] = (x[i, 2*j] + x[i, 2*j + 1]) / SQRT2
-                    y[i, length + j] = (x[i, 2*j] + x[i, 2*j + 1]) / SQRT2
+                    if orthogonal:
+                        y[i, j] = (x[i, 2*j] + x[i, 2*j + 1]) / SQRT2
+                        y[i, length + j] = (x[i, 2*j] - x[i, 2*j + 1]) / SQRT2
+                    else:
+                        y[i, j] = x[i, 2*j] + x[i, 2*j + 1]
+                        y[i, length + j] = x[i, 2*j] - x[i, 2*j + 1]
             if length == 1:
                 break
             length = length // 2
             x[:] = y
+
     return y
