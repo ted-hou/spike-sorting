@@ -4,10 +4,10 @@ from dwt import *
 
 
 class TestDWT(unittest.TestCase):
-    def test_haart_1d(self):
+    def test_haar_transform(self):
         data = np.asarray([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
         data_transformed_ground_truth = [22, -4, -5.65685424949238, 2.82842712474619, -2, -2, 4, 0, -0.707106781186548, -0.707106781186548, -0.707106781186548, -0.707106781186548, -0.707106781186547, -5.55111512312578e-17, -5.55111512312578e-17, -5.55111512312578e-17]
-        data_transformed, haar = haart_1d(data)
+        data_transformed, haar = haar_transform(data)
         self.assertTrue(data_transformed.shape == (3, 16))
         self.assertTrue(np.allclose(data_transformed_ground_truth, data_transformed[1, :]))
 

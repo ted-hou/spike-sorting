@@ -4,10 +4,8 @@ import warnings
 import numpy
 import numpy as np
 
-from _dwt_utils import _haart_1d_loop
 
-
-def haart_1d(x: numpy.ndarray, h: numpy.ndarray = None, orthogonal=True):
+def haar_transform(x: numpy.ndarray, h: numpy.ndarray = None, orthogonal=True):
     """
     Perform 1-d discrete Haar wavelet transform.
     :param x: input signal with shape (n_signals, n_samples_per_signal)
@@ -139,8 +137,3 @@ def _conform_shape_to_pow2(data: np.ndarray, axis=0, mode='lrtrim', pad_with='me
 
     assert data.shape[axis] == desired_length
     return data
-
-
-def haart_1d_loop(x, orthogonal=True):
-    y = _haart_1d_loop(np.asarray(x, dtype=np.float64), 1 if orthogonal else 0)
-    return np.asarray(y)
