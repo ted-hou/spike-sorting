@@ -1,14 +1,10 @@
 import math
+import warnings
 
 import numpy
 import numpy as np
 
 from _dwt_utils import _haart_1d_loop
-
-
-def haart_1d_loop(x, orthogonal=True):
-    y = _haart_1d_loop(np.asarray(x, dtype=np.float64), 1 if orthogonal else 0)
-    return np.asarray(y)
 
 
 def haart_1d(x: numpy.ndarray, h: numpy.ndarray = None, orthogonal=True):
@@ -20,8 +16,18 @@ def haart_1d(x: numpy.ndarray, h: numpy.ndarray = None, orthogonal=True):
     :return:
     """
 
+    x = np.asarray(x, dtype=np.float64)
+
+    n_samples = x.shape[1]
+
+    # Ensure n_samples is power of two by padding data
+    if not _is_power_of_two(n_samples):
+        x = _conform_shape_to_pow2(x, axis=1, mode='rpad', pad_with='median')
+        n_samples = x.shape[1]
+
+    # Calculate Haar matrix
     if h is None:
-        h = haar_matrix(x.shape[1], orthogonal)
+        h = haar_matrix(n_samples, orthogonal)
 
     y = x @ h.T
 
@@ -76,3 +82,65 @@ def _haar_matrix_recursive(k, orthogonal=True):
         h = np.asarray([[1, 1], [1, -1]])
 
     return h
+
+
+def _is_power_of_two(n: int):
+    return n != 0 and (n & (n - 1) == 0)
+
+
+def _conform_shape_to_pow2(data: np.ndarray, axis=0, mode='lrtrim', pad_with='median'):
+    """
+    Ensure data length is power of two along a specific axis.
+
+    :param data: input data
+    :param axis: (default 0)
+    :param mode: 'rtrim', 'ltrim', 'lrtrim', 'rpad', 'lpad', 'lrpad' (default 'lrtrim')
+    :param pad_with: 'median', 'mean', or 'constant' (use zeros). See numpy.pad() (default 'median')
+    :return:
+    View of sliced array (trim mode) or copy of padded array (pad mode)
+    """
+
+    data_length = data.shape[axis]
+    if data_length <= 1:
+        raise ValueError(f"Data length expected to be 2 or higher, is {data_length}")
+    elif _is_power_of_two(data_length):
+        return data
+    else:
+        if mode in ('rtrim', 'ltrim', 'lrtrim'):
+            desired_length = 2 ** math.floor(math.log2(data_length))
+        elif mode in ('lpad', 'rpad', 'lrpad'):
+            desired_length = 2 ** math.ceil(math.log2(data_length))
+        else:
+            raise ValueError(
+                f"Unrecognized mode: '{mode}', expected 'rtrim', 'ltrim', 'lrtrim', 'lpad', 'rpad', or 'lrpad'")
+
+    if mode == 'rtrim':
+        data = data.take(range(0, desired_length), axis=axis)
+    elif mode == 'ltrim':
+        data = data.take(range(data_length - desired_length, data_length), axis=axis)
+    elif mode == 'lrtrim':
+        n_ltrim = (data_length - desired_length) // 2
+        n_rtrim = data_length - desired_length - n_ltrim
+        data = data.take(range(n_ltrim, data_length - n_rtrim), axis=axis)
+    elif mode == 'rpad':
+        pw = [(0, 0)] * data.ndim
+        pw[axis] = (0, desired_length - data_length)
+        data = np.pad(data, pad_width=pw, mode=pad_with)
+    elif mode == 'lpad':
+        pw = [(0, 0)] * data.ndim
+        pw[axis] = (desired_length - data_length, 0)
+        data = np.pad(data, pad_width=pw, mode=pad_with)
+    elif mode == 'lrpad':
+        n_lpad = (desired_length - data_length) // 2
+        n_rpad = desired_length - data_length - n_lpad
+        pw = [(0, 0)] * data.ndim
+        pw[axis] = (n_lpad, n_rpad)
+        data = np.pad(data, pad_width=pw, mode=pad_with)
+
+    assert data.shape[axis] == desired_length
+    return data
+
+
+def haart_1d_loop(x, orthogonal=True):
+    y = _haart_1d_loop(np.asarray(x, dtype=np.float64), 1 if orthogonal else 0)
+    return np.asarray(y)
