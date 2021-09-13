@@ -116,7 +116,7 @@ def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_s
         i_waveform = 0
         for i_sample in i_peaks:
             waveform = data[i_sample + waveform_window_samples[0]:i_sample + waveform_window_samples[1] + 1, chn]
-            if __validate_waveform(waveform, -waveform_window_samples[0], threshold_return, direction, n_samples_per_waveform):
+            if _validate_waveform(waveform, -waveform_window_samples[0], threshold_return, direction, n_samples_per_waveform):
                 spike_data[chn].waveforms[i_waveform, :] = waveform
                 spike_data[chn].sample_indices[i_waveform] = i_sample
                 i_waveform += 1
@@ -126,15 +126,15 @@ def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_s
             # NOTE: np.ndarray.resize() flattens in memory order, reallocates and then reshapes.
             # This means a C-contiguous array is correctly resized when trimmed ONLY along axis=0
             assert spike_data[chn].waveforms.flags.c_contiguous
-            spike_data[chn].waveforms.resize((i_waveform, n_samples_per_waveform))
-            spike_data[chn].sample_indices.resize((i_waveform,))
+            spike_data[chn].waveforms.resize((i_waveform, n_samples_per_waveform), refcheck=False)
+            spike_data[chn].sample_indices.resize((i_waveform,), refcheck=False)
 
         spike_data[chn].timestamps = spike_data[chn].sample_indices / sample_rate
 
     return spike_data
 
 
-def __validate_waveform(waveform, center_index, threshold_return, direction, n_samples_per_waveform) -> bool:
+def _validate_waveform(waveform, center_index, threshold_return, direction, n_samples_per_waveform) -> bool:
     """Returns True if waveform meets length and return-to-threshold requirements."""
     if waveform.size != n_samples_per_waveform:
         return False
@@ -142,3 +142,4 @@ def __validate_waveform(waveform, center_index, threshold_return, direction, n_s
         return True
     else:
         return np.any(waveform[center_index:] * direction <= threshold_return * direction)
+

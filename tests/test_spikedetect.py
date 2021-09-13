@@ -33,6 +33,5 @@ class TestSpikeDetect(unittest.TestCase):
                 self.assertTrue(condition, msg)
 
 
-
 if __name__ == '__main__':
     unittest.main()

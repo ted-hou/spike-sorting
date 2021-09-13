@@ -5,13 +5,17 @@ import numpy
 import numpy as np
 
 
-def haar_transform(x: numpy.ndarray, h: numpy.ndarray = None, orthogonal=True):
+def haar_transform(x: numpy.ndarray, h: numpy.ndarray = None, orthogonal=True, shape_conform_mode='rpad', shape_conform_pad_value='median'):
     """
     Perform 1-d discrete Haar wavelet transform.
     :param x: input signal with shape (n_signals, n_samples_per_signal)
     :param h: (optional) Haar transformation matrix. Provide cached matrix for performance.
     :param orthogonal: orthogonal transformation is likely slower (default True)
+    :param shape_conform_mode: how to handle data lengths that aren't powers of two. Can be 'rtrim', 'ltrim', 'lrtrim', 'rpad', 'lpad', 'lrpad' (default 'rpad')
+    :param shape_conform_pad_value: what value to use if shape_conform_mode is '*pad'. Can be 'median', 'mean', or 'constant' (use zeros). (default 'median')
     :return:
+        y - transformed data
+        h - haar matrix used for transformation
     """
 
     x = np.asarray(x, dtype=np.float64)
@@ -20,7 +24,7 @@ def haar_transform(x: numpy.ndarray, h: numpy.ndarray = None, orthogonal=True):
 
     # Ensure n_samples is power of two by padding data
     if not _is_power_of_two(n_samples):
-        x = _conform_shape_to_pow2(x, axis=1, mode='rpad', pad_with='median')
+        x = _conform_shape_to_pow2(x, axis=1, mode=shape_conform_mode, pad_with=shape_conform_pad_value)
         n_samples = x.shape[1]
 
     # Calculate Haar matrix
