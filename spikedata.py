@@ -16,10 +16,13 @@ class SpikeData:
     waveforms: np.ndarray
     timestamps: np.ndarray
     waveform_timestamps: np.ndarray
+    waveform_units: str = 'uV'
+    waveform_conversion_factor: float = 1.0
     detect_config: SpikeDetectConfig
 
     def __init__(self, channel=None, sample_rate=None, electrode=None, sample_indices=None, waveforms=None,
-                 timestamps=None, waveform_timestamps=None, waveform_window=None, detect_config=None):
+                 timestamps=None, waveform_timestamps=None, waveform_units=None, waveform_conversion_factor=1.0,
+                 detect_config=None):
         self.channel = channel
         self.sample_rate = sample_rate
         self.electrode = electrode
@@ -27,4 +30,6 @@ class SpikeData:
         self.waveforms = waveforms
         self.timestamps = timestamps
         self.waveform_timestamps = waveform_timestamps
+        self.waveform_units = waveform_units
+        self.waveform_conversion_factor = waveform_conversion_factor
         self.detect_config = detect_config

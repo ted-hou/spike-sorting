@@ -14,9 +14,10 @@ class ContinuousData:
         analog_units: str  # Units of the analog range values (“mV”, “μV”).
         high_freq_cutoff: float  # High frequency cutoff (Hz) used in bandpass filter: Inf = None
         low_freq_cutoff: float  # Low frequency cutoff (Hz) used in bandpass filter: 0 = None
+        conversion_factor: float  # Multiply by this value to convert data from int16 to float64
 
     file: str  # path to continuous data file
-    data: np.ndarray  # continuous data with shape (num_samples, num_channels)
+    data: np.ndarray  # int16 representation of continuous data with shape (num_samples, num_channels). Needs to be multiplied with conversion_factor for actual voltage
     time_origin: datetime  # UTC time at first sample in file
     channels: [int]  # zero-based indices indicating which channels were read from file
     electrodes: [int]  # electrode ids read from file (this is usually a 1-based index)
@@ -55,6 +56,7 @@ class BlackrockContinuousData(ContinuousData):
             self.max_digital_value = int.from_bytes(data[24:26], byteorder='little', signed=True)
             self.min_analog_value = int.from_bytes(data[26:28], byteorder='little', signed=True)
             self.max_analog_value = int.from_bytes(data[28:30], byteorder='little', signed=True)
+            self.conversion_factor = self.max_analog_value / self.max_digital_value
             self.analog_units = data[30:46].rstrip(b'\x00').decode()
             self.high_freq_cutoff = int.from_bytes(data[46:50], byteorder='little', signed=False) / 1000
             self.high_freq_order = int.from_bytes(data[50:54], byteorder='little', signed=False)

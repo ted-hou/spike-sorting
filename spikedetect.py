@@ -1,5 +1,4 @@
 import copy
-import time
 from continuousdata import ContinuousData
 import numpy as np
 from scipy.signal import find_peaks
@@ -17,7 +16,7 @@ class SpikeDetectConfig:
     threshold_reject = None
 
     def __init__(self, direction=-1, n_sigmas=3.0, n_sigmas_return=1.5, n_sigmas_reject=40.0,
-                 waveform_window=(-.5, .5), sd=None):
+                 waveform_window=(-5e-4, 5e-4), sd=None):
         direction = 1 if direction > 0 else -1
         self.direction = direction
         self.n_sigmas = n_sigmas
@@ -59,7 +58,7 @@ def estimate_sd(data):
 
 def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_sigmas=3.0, n_sigmas_return=1.5,
                    n_sigmas_reject=40.0,
-                   waveform_window=(-.5, .5), config: SpikeDetectConfig = None):
+                   waveform_window=(-5e-4, 5e-4), config: SpikeDetectConfig = None):
     """
     Find waveforms. Uses scipy.signal.find_peaks for spike detection. This is 20x faster than custom python code.
 
@@ -70,14 +69,21 @@ def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_s
     :param n_sigmas: spike detection threshold, specified as number of standard deviations (default 3.0)
     :param n_sigmas_return: spike rejection threshold, to exclude large artefact (default 40.0, use None to ignore)
     :param n_sigmas_reject: spike must return to this threshold within waveform_window (default 1.5, use None to ignore)
-    :param waveform_window: window in milliseconds extracted around peak of waveform (default (-1.0, 1.0))
+    :param waveform_window: window in seconds extracted around peak of waveform (default (-0.0005, 0.0005), 1ms window)
     :param config: spikedetect.SpikeDetectConfig object, overrides all other params if provided (default None)
     :return:
     """
     if isinstance(data, ContinuousData):
         sample_rate = data.sample_rate
         electrode_map = data.electrodes
+        waveform_conversion_factor = [ci.conversion_factor for ci in data.channels_info]
+        analog_units = [ci.analog_units for ci in data.channels_info]
         data = data.data
+    else:
+        if sample_rate is None or sample_rate <= 0:
+            raise ValueError(f"sample_rate must be positive, got {sample_rate} instead.")
+        analog_units = ['uv'] * data.shape[1]
+        waveform_conversion_factor = [1.0] * data.shape[1]
 
     sd = estimate_sd(data)
     if config is None:
@@ -87,13 +93,15 @@ def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_s
         configs = [copy.copy(config).set_sd(this_sd) for this_sd in sd]
 
     (n_samples, n_channels) = data.shape
-    waveform_window_samples = np.rint(np.array(waveform_window) * sample_rate / 1000.0).astype(int)
+    waveform_window_samples = np.rint(np.array(waveform_window) * sample_rate).astype(int)
 
     n_samples_per_waveform = -waveform_window_samples[0] + waveform_window_samples[1] + 1
 
     from spikedata import SpikeData
-    spike_data = [SpikeData(channel=i, sample_rate=sample_rate, electrode=None if electrode_map is None else electrode_map[i], detect_config=configs[i]) for i in
-                  range(n_channels)]
+    spike_data = [SpikeData(channel=i, sample_rate=sample_rate,
+                            electrode=None if electrode_map is None else electrode_map[i], detect_config=configs[i],
+                            waveform_units=analog_units[i], waveform_conversion_factor=waveform_conversion_factor[i])
+                  for i in range(n_channels)]
 
     for chn in range(n_channels):
         direction = configs[chn].direction
@@ -130,6 +138,7 @@ def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_s
             spike_data[chn].sample_indices.resize((i_waveform,), refcheck=False)
 
         spike_data[chn].timestamps = spike_data[chn].sample_indices / sample_rate
+
 
     return spike_data
 
