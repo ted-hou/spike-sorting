@@ -1,28 +1,28 @@
 import sys
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QModelIndex
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtCore import Qt
 import pyqtgraph as pg
-import gui
+from gui.cluster_list_model import ClusterListModel
 
 
 class MainWindow(QMainWindow):
     hToolBar: QToolBar
     hPltWaveformRaw: pg.PlotWidget
     hPltWaveformMean: pg.PlotWidget
-    hListWidgetClusters: QListWidget
+    hClusterListView: QListView
+    hClusterListModel: ClusterListModel
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Spike Sorting")
 
         layout, layout_widget = self._create_layout()
-        self.hListWidgetClusters = self._create_cluster_list()
+        self.hClusterListView, self.hClusterListModel = self._create_cluster_list()
 
         self.hToolBar = self._create_toolbar()
         self.hPltWaveformRaw, self.hPltWaveformMean = self._create_plots()
 
-        layout.addWidget(self.hListWidgetClusters, 0, 0)
+        layout.addWidget(self.hClusterListView, 0, 0)
         layout.addWidget(self.hPltWaveformRaw, 0, 1, alignment=Qt.AlignCenter)
         layout.addWidget(self.hPltWaveformMean, 0, 2, alignment=Qt.AlignCenter)
 
@@ -49,59 +49,16 @@ class MainWindow(QMainWindow):
         toolbar.addAction("Delete")
         return toolbar
 
-    def reassign_colors(self, disconnect=True, lw: QListWidget = None):
-        if lw is None:
-            lw = self.hListWidgetClusters
-        if disconnect:
-            self.enable_connections(False, lw=lw)
-
-        for i in range(lw.count()):
-            item = lw.item(i)
-            font = item.font()
-            if item.checkState() == Qt.Checked:
-                item.setForeground(QColor('white'))
-                item.setBackground(gui.default_color(i))
-                font.setBold(True)
-            else:
-                item.setForeground(gui.default_color(i))
-                item.setBackground(QColor('white'))
-                font.setBold(False)
-            item.setFont(font)
-
-        if disconnect:
-            self.enable_connections(True, lw=lw)
-
-    def enable_connections(self, enable=True, lw: QListWidget = None):
-        if lw is None:
-            lw = self.hListWidgetClusters
-        if enable:
-            lw.itemChanged.connect(lambda: self.reassign_colors(True, lw=lw))
-            lw.model().rowsMoved.connect(lambda: self.reassign_colors(True, lw=lw))
-        else:
-            lw.itemChanged.disconnect()
-            lw.model().rowsMoved.disconnect()
-
-    def _create_cluster_list(self):
-        lw = QListWidget()
-        lw.addItem("Asscracks")
-        lw.addItem("Butts")
-        lw.addItem("Boobies")
-        lw.addItem("Poopoo")
-        lw.addItem("Peepee")
-        lw.addItem("Goop")
-        lw.addItem("Nerp")
-        for i in range(lw.count()):
-            item = lw.item(i)
-            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)
-
-        lw.setDragDropMode(QAbstractItemView.InternalMove)
-        lw.setDragEnabled(True)
-        lw.setSelectionMode(QAbstractItemView.ExtendedSelection)
-
-        self.reassign_colors(disconnect=False, lw=lw)
-        self.enable_connections(True, lw=lw)
-        return lw
+    @staticmethod
+    def _create_cluster_list():
+        view = QListView()
+        view.setDragEnabled(True)
+        view.setAcceptDrops(True)
+        view.setDropIndicatorShown(True)
+        view.setDragDropMode(QAbstractItemView.DragDrop)
+        model = ClusterListModel(view)
+        view.setModel(model)
+        return view, model
 
     @staticmethod
     def _create_plots():
