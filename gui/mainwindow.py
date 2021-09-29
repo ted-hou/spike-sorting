@@ -2,40 +2,67 @@ import sys
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt
 import pyqtgraph as pg
+from pyqtgraph import ViewBox
 from gui.cluster_list_model import ClusterListModel
 
 
 class MainWindow(QMainWindow):
-    hToolBar: QToolBar
-    hPltWaveformRaw: pg.PlotWidget
-    hPltWaveformMean: pg.PlotWidget
-    hClusterListView: QListView
-    hClusterListModel: ClusterListModel
+    toolbar: QToolBar
+    viewMenu: QMenu
+    waveformPlot: pg.PlotItem
+    xyFeaturesPlot: pg.PlotItem
+    xzFeaturesPlot: pg.PlotItem
+    yzFeaturesPlot: pg.PlotItem
+    clusterListView: QListView
+    clusterListModel: ClusterListModel
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Spike Sorting")
+        self.toolbar = self._create_toolbar()
+        self.viewMenu = self.menuBar().addMenu("&View")
 
-        layout, layout_widget = self._create_layout()
-        self.hClusterListView, self.hClusterListModel = self._create_cluster_list()
-
-        self.hToolBar = self._create_toolbar()
-        self.hPltWaveformRaw, self.hPltWaveformMean = self._create_plots()
-
-        layout.addWidget(self.hClusterListView, 0, 0)
-        layout.addWidget(self.hPltWaveformRaw, 0, 1, alignment=Qt.AlignCenter)
-        layout.addWidget(self.hPltWaveformMean, 0, 2, alignment=Qt.AlignCenter)
-
-        self.show()
-
-    def _create_layout(self):
+        # Create layout for 3 plots (waveform, features xy, features xz, features yz)
+        dock = QDockWidget("Waveform features")
         layout = QGridLayout()
-        layout.setContentsMargins(25, 25, 25, 25)
-        layout.setSpacing(25)
-        w = QWidget(self)
-        w.setLayout(layout)
-        self.setCentralWidget(w)
-        return layout, w
+        pw = pg.PlotWidget()
+        self.waveformPlot = pw.getPlotItem()
+        layout.addWidget(pw, 0, 1)
+        pw = pg.PlotWidget()
+        self.xyFeaturesPlot = pw.getPlotItem()
+        layout.addWidget(pw, 0, 0)
+        pw = pg.PlotWidget()
+        self.xzFeaturesPlot = pw.getPlotItem()
+        layout.addWidget(pw, 1, 0)
+        pw = pg.PlotWidget()
+        self.yzFeaturesPlot = pw.getPlotItem()
+        layout.addWidget(pw, 1, 1)
+
+        # Link x,y,z axes
+        import weakref
+        xyView = self.xyFeaturesPlot.getViewBox()
+        xzView = self.xzFeaturesPlot.getViewBox()
+        yzView = self.yzFeaturesPlot.getViewBox()
+
+        from gui.pyqtgraph_utils import linkAxes
+        linkAxes(xyView, yzView, ViewBox.YAxis, ViewBox.XAxis, reciprocal=True)
+        linkAxes(xyView, xzView, ViewBox.XAxis, ViewBox.XAxis, reciprocal=True)
+        linkAxes(yzView, xzView, ViewBox.YAxis, ViewBox.YAxis, reciprocal=True)
+
+        layoutWidget = QWidget(dock)
+        layoutWidget.setLayout(layout)
+        dock.setWidget(layoutWidget)
+        dock.setAllowedAreas(Qt.AllDockWidgetAreas)
+        self.addDockWidget(Qt.LeftDockWidgetArea, dock)
+        self.viewMenu.addAction(dock.toggleViewAction())
+
+        # Clusters
+        dock = QDockWidget("Clusters", self)
+        self.clusterListView, self.clusterListModel = self._create_cluster_list()
+        dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        dock.setWidget(self.clusterListView)
+        self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.viewMenu.addAction(dock.toggleViewAction())
 
     def _create_toolbar(self):
         toolbar = self.addToolBar("File")
@@ -50,12 +77,9 @@ class MainWindow(QMainWindow):
         return toolbar
 
     @staticmethod
-    def _create_cluster_list():
+    def _create_cluster_list() -> (QListView, ClusterListModel):
         view = QListView()
-        view.setDragEnabled(True)
-        view.setAcceptDrops(True)
-        view.setDropIndicatorShown(True)
-        view.setDragDropMode(QAbstractItemView.DragDrop)
+        view.setDragDropMode(QAbstractItemView.InternalMove)
         model = ClusterListModel(view)
         view.setModel(model)
         return view, model

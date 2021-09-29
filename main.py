@@ -3,7 +3,7 @@ import numpy as np
 from continuousdata import BlackrockContinuousData
 import spikedetect
 from spikesorting import extract_features, cluster
-from gui.plot import plot_waveforms
+from gui.plot import plot_waveforms, plot_features
 
 # Read continuous data
 file = r'\\research.files.med.harvard.edu\neurobio\NEUROBIOLOGY SHARED\Assad Lab\Lingfeng\Data\daisy8\daisy8_20210708\daisy8_20210708.ns5 '
@@ -45,8 +45,10 @@ from gui.mainwindow import MainWindow
 
 app = QApplication([])
 window = MainWindow()
-plot_waveforms(spike_data, labels=labels, plt=window.hPltWaveformRaw, mode='raw')
-plot_waveforms(spike_data, labels=labels, plt=window.hPltWaveformMean, mode='mean', yrange=window.hPltWaveformRaw)
+p1 = plot_waveforms(spike_data, labels=labels, plt=window.waveformPlot, mode='mean')
+p2 = plot_features(spike_features, dims='xy', labels=labels, plt=window.xyFeaturesPlot)
+p3 = plot_features(spike_features, dims='xz', labels=labels, plt=window.xzFeaturesPlot)
+p4 = plot_features(spike_features, dims='yz', labels=labels, plt=window.yzFeaturesPlot)
 window.show()
 app.exec()
 

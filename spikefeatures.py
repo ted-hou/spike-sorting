@@ -7,7 +7,7 @@ from abc import abstractmethod, ABC
 
 
 class SpikeFeatures(ABC):
-    features: np.ndarray
+    features: np.ndarray  # np.ndarray with shape (n_waveforms, ndims)
     ndims: int
     sorted: bool
 

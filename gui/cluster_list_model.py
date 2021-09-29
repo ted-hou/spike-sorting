@@ -1,12 +1,11 @@
-import dataclasses
 import typing
 from PyQt5.QtCore import Qt, QModelIndex, QAbstractListModel, QVariant, QMimeData, QByteArray, \
-    QDataStream, QIODevice, QStringListModel
+    QDataStream, QIODevice
 from PyQt5.QtGui import QColor, QFont, QBrush
 import gui
 
 
-class ClusterListModel(QStringListModel):
+class ClusterListModel(QAbstractListModel):
     class ItemData:
         name: str = ''
         checked: bool = True
@@ -28,7 +27,7 @@ class ClusterListModel(QStringListModel):
             self.font.setBold(highlight)
 
         def setColor(self, color: typing.Union[QColor, str]):
-            if color is str:
+            if type(color) is str:
                 color = QColor(color)
             if not isinstance(color, QColor):
                 raise TypeError(f"color is type {type(color)}, expected QColor or str")
@@ -70,7 +69,6 @@ class ClusterListModel(QStringListModel):
         for i in range(count):
             self.itemData.insert(row + i, ClusterListModel.ItemData(str(i)))
         if len(self.itemData) > len(self.itemStyles):
-            print(len(self.itemData), len(self.itemStyles))
             self.itemStyles = [self.ItemStyle(gui.default_color(i), self.itemData[i].checked) for i in range(len(self.itemData))]
         self.endInsertRows()
         return True
@@ -85,14 +83,34 @@ class ClusterListModel(QStringListModel):
                            range(len(self.itemData))]
         return True
 
+    def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex, destinationChild: int) -> bool:
+        if sourceRow < 0 or sourceRow + count - 1 >= self.rowCount(sourceParent) or destinationChild <= 0 or destinationChild > self.rowCount(destinationParent) or sourceRow == destinationChild - 1 or count <= 0:
+            return False
+
+        if not self.beginMoveRows(QModelIndex(), sourceRow, sourceRow + count - 1, QModelIndex(), destinationChild):
+            return False
+
+        destinationChild -= 1
+        from_row = sourceRow + count - 1 if destinationChild < sourceRow else sourceRow
+        for i in range(count):
+            self.itemData.insert(destinationChild, self.itemData.pop(from_row))
+        self.endMoveRows()
+        return True
+
+
     # To make items checkable, override flags method and and add Qt.ItemIsUserCheckable
     def flags(self, index: QModelIndex):
-        # base_flags = super().flags(index)
-        base_flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
-        if index.isValid():
-            return base_flags | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsEditable
-        else:
+        base_flags = QAbstractListModel.flags(self, index)
+        if not index.isValid():
             return base_flags | Qt.ItemIsDropEnabled
+        else:
+            return base_flags | Qt.ItemIsEditable | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+
+        # base_flags = Qt.ItemIsEnabled | Qt.ItemIsSelectable
+        # if index.isValid():
+        #     return base_flags | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsEditable
+        # else:
+        #     return base_flags | Qt.ItemIsDropEnabled
 
     # Modify setData: when checking/unchecking an item, it is added/removed from a set.
     def setData(self, index: QModelIndex, value, role=Qt.DisplayRole) -> bool:
@@ -131,7 +149,7 @@ class ClusterListModel(QStringListModel):
             return QVariant()
 
     def supportedDragActions(self):
-        return Qt.MoveAction
+        return QAbstractListModel.supportedDragActions(self) | Qt.MoveAction
 
     def mimeTypes(self):
         return [self._mimeType]
@@ -162,7 +180,6 @@ class ClusterListModel(QStringListModel):
         if action == Qt.IgnoreAction:
             return True
 
-        begin_row = -1
         # Insert between/above/below existing node
         if row != -1:
             begin_row = row
@@ -194,7 +211,7 @@ class ClusterListModel(QStringListModel):
         return True
 
     def getChecked(self, index: typing.Union[int, QModelIndex]) -> bool:
-        if index is int:
+        if type(index) is int:
             index = self.index(index, index)
         if index.isValid():
             return self.itemData[index.row()].checked
@@ -202,7 +219,7 @@ class ClusterListModel(QStringListModel):
             return False
 
     def setChecked(self, index: typing.Union[int, QModelIndex], checked=True) -> bool:
-        if index is int:
+        if type(index) is int:
             index = self.index(index, index)
 
         if not index.isValid():
