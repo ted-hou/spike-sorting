@@ -4,6 +4,8 @@ import pyqtgraph as pg
 from pyqtgraph import ViewBox
 import weakref
 
+
+# noinspection PyPep8Naming
 class MultiCurvePlotItem(QGraphicsPathItem):
     def __init__(self, x, y, c='w'):
         """
@@ -19,10 +21,11 @@ class MultiCurvePlotItem(QGraphicsPathItem):
         super().__init__(self.path)
         self.setPen(pg.mkPen(c))
 
-    def boudingRect(self):
+    def boundingRect(self):
         return self.path.boundingRect()
 
 
+# noinspection PyPep8Naming
 def linkAxes(srcView: ViewBox, tgtView: ViewBox, srcAxis: int, tgtAxis: int, reciprocal=True):
     if not hasattr(tgtView, 'axisLinkSlot'):
         tgtView.axisLinkSlot = [None, None]
@@ -37,7 +40,8 @@ def linkAxes(srcView: ViewBox, tgtView: ViewBox, srcAxis: int, tgtAxis: int, rec
         oldSrcView = oldSrcView()
         if oldSrcView is not None:
             oldSignal = 'sigXRangeChanged' if oldSrcAxis == ViewBox.XAxis else 'sigYRangeChanged'
-            getattr(oldSrcView, oldSignal).disconnect() # This diconnect everything, might conflict with native functionality
+            getattr(oldSrcView,
+                    oldSignal).disconnect()  # This diconnect everything, might conflict with native functionality
 
     # Connect new
     if srcAxis == ViewBox.XAxis:
@@ -51,6 +55,8 @@ def linkAxes(srcView: ViewBox, tgtView: ViewBox, srcAxis: int, tgtAxis: int, rec
     if reciprocal:
         linkAxes(tgtView, srcView, tgtAxis, srcAxis, reciprocal=False)
 
+
+# noinspection PyPep8Naming
 def _updateAxisFromLinkedView(src: ViewBox, tgt: ViewBox, axis: int, value: tuple):
     if tgt.linksBlocked:
         return

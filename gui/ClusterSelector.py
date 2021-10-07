@@ -2,10 +2,12 @@ import typing
 from PyQt5.QtCore import Qt, QModelIndex, QAbstractListModel, QVariant, QMimeData, QByteArray, \
     QDataStream, QIODevice
 from PyQt5.QtGui import QColor, QFont, QBrush
+from PyQt5.QtWidgets import *
 import gui
 
 
-class ClusterListModel(QAbstractListModel):
+# noinspection PyPep8Naming
+class ClusterSelectorModel(QAbstractListModel):
     class ItemData:
         name: str = ''
         checked: bool = True
@@ -49,27 +51,28 @@ class ClusterListModel(QAbstractListModel):
                 self.bg = QColor('white')
                 self.fg = self.color
 
-    itemData: list[ItemData]
-    itemStyles: list[ItemStyle]
+    itemData: list[ItemData] = []
+    itemStyles: list[ItemStyle] = []
     _mimeType = "application/vnd.text.list"
 
     def __init__(self, parent=None):
-        super(ClusterListModel, self).__init__(parent)
-        self.itemData = [self.ItemData(str(i)) for i in range(5)]
-        self.itemStyles = [self.ItemStyle(gui.default_color(i), True) for i in range(5)]
+        super(ClusterSelectorModel, self).__init__(parent)
+        # self.itemData = [self.ItemData(str(i)) for i in range(5)]
+        # self.itemStyles = [self.ItemStyle(gui.default_color(i), True) for i in range(5)]
 
     def rowCount(self, parent=None) -> int:
         return len(self.itemData)
 
-    def insertRows(self, row, count, parent=None) -> bool:
+    def insertRows(self, row, count, parent=QModelIndex()) -> bool:
         if parent is not None and parent.isValid():
             return False
 
         self.beginInsertRows(parent, row, row + count - 1)
         for i in range(count):
-            self.itemData.insert(row + i, ClusterListModel.ItemData(str(i)))
+            self.itemData.insert(row + i, ClusterSelectorModel.ItemData(str(i)))
         if len(self.itemData) > len(self.itemStyles):
-            self.itemStyles = [self.ItemStyle(gui.default_color(i), self.itemData[i].checked) for i in range(len(self.itemData))]
+            self.itemStyles = [self.ItemStyle(gui.default_color(i), self.itemData[i].checked) for i in
+                               range(len(self.itemData))]
         self.endInsertRows()
         return True
 
@@ -77,14 +80,17 @@ class ClusterListModel(QAbstractListModel):
         if parent is not None and parent.isValid():
             return False
         self.beginRemoveRows(parent, row, row + count - 1)
-        del self.itemData[row:row+count]
+        del self.itemData[row:row + count]
         self.endRemoveRows()
         self.itemStyles = [self.ItemStyle(gui.default_color(i), self.itemData[i].checked) for i in
                            range(len(self.itemData))]
         return True
 
-    def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex, destinationChild: int) -> bool:
-        if sourceRow < 0 or sourceRow + count - 1 >= self.rowCount(sourceParent) or destinationChild <= 0 or destinationChild > self.rowCount(destinationParent) or sourceRow == destinationChild - 1 or count <= 0:
+    def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex,
+                 destinationChild: int) -> bool:
+        if sourceRow < 0 or sourceRow + count - 1 >= self.rowCount(
+                sourceParent) or destinationChild <= 0 or destinationChild > self.rowCount(
+                destinationParent) or sourceRow == destinationChild - 1 or count <= 0:
             return False
 
         if not self.beginMoveRows(QModelIndex(), sourceRow, sourceRow + count - 1, QModelIndex(), destinationChild):
@@ -96,7 +102,6 @@ class ClusterListModel(QAbstractListModel):
             self.itemData.insert(destinationChild, self.itemData.pop(from_row))
         self.endMoveRows()
         return True
-
 
     # To make items checkable, override flags method and and add Qt.ItemIsUserCheckable
     def flags(self, index: QModelIndex):
@@ -228,3 +233,13 @@ class ClusterListModel(QAbstractListModel):
         self.itemData[index.row()].checked = checked
         self.itemStyles[index.row()].setHighlight(checked)
         return True
+
+
+# noinspection PyPep8Naming
+class ClusterSelector(QListView):
+    def __init__(self, parent: QWidget = None):
+        super().__init__(parent)
+        self.setDragDropMode(QAbstractItemView.InternalMove)
+        model = ClusterSelectorModel(self)
+        # self.setMinimumSize(200, 500)
+        self.setModel(model)

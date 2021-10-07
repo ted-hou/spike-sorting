@@ -6,18 +6,18 @@ from spikesorting import extract_features, cluster
 from gui.plot import plot_waveforms, plot_features
 
 # Read continuous data
-file = r'\\research.files.med.harvard.edu\neurobio\NEUROBIOLOGY SHARED\Assad Lab\Lingfeng\Data\daisy8\daisy8_20210708\daisy8_20210708.ns5 '
+file = r'\\research.files.med.harvard.edu\neurobio\NEUROBIOLOGY SHARED\Assad Lab\Lingfeng\Data\daisy9\daisy9_20211001\daisy9_20211001.ns5'
 cont_data = BlackrockContinuousData()
-cont_data.read(file, channels=(0, 1), n_samples=30000, electrodes=None)
+cont_data.read(file, channels=range(32), n_samples=30000, electrodes=None)
 
 # Spike detection
 spike_data = spikedetect.find_waveforms(cont_data, direction=-1, n_sigmas=2.0, n_sigmas_reject=40.0,
                                         n_sigmas_return=1.0)
-spike_data = spike_data[0]
+# spike_data = spike_data[0]
 
 # Spike sorting
 spike_features = extract_features(spike_data, ndims=5, method='haar')
-labels = cluster(spike_features, n_clusters=3, method='kmeans')
+spike_labels = cluster(spike_features, n_clusters=3, method='kmeans')
 #
 # # Plot waveforms
 # # Create window and 2 subplots
@@ -41,17 +41,17 @@ labels = cluster(spike_features, n_clusters=3, method='kmeans')
 # p2.addItem(line_roi)
 
 from PyQt5.QtWidgets import QApplication
-from gui.mainwindow import MainWindow
+from gui.MainWindow import MainWindow
 
 app = QApplication([])
-window = MainWindow()
-p1 = plot_waveforms(spike_data, labels=labels, plt=window.waveformPlot, mode='mean')
-p2 = plot_features(spike_features, dims='xy', labels=labels, plt=window.xyFeaturesPlot)
-p3 = plot_features(spike_features, dims='xz', labels=labels, plt=window.xzFeaturesPlot)
-p4 = plot_features(spike_features, dims='yz', labels=labels, plt=window.yzFeaturesPlot)
+window = MainWindow(spike_data, spike_features, spike_labels)
+# p1 = plot_waveforms(spike_data, labels=labels, plt=window.waveformPlot, mode='mean')
+# p2 = plot_features(spike_features, dims='xy', labels=labels, plt=window.xyFeaturesPlot)
+# p3 = plot_features(spike_features, dims='xz', labels=labels, plt=window.xzFeaturesPlot)
+# p4 = plot_features(spike_features, dims='yz', labels=labels, plt=window.yzFeaturesPlot)
 window.show()
 app.exec()
 
 
-from gui.mainwindow import start_app
+from gui.MainWindow import start_app
 # start_app()
