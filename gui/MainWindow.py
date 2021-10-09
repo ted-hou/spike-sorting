@@ -1,6 +1,5 @@
 import sys
 import typing
-
 import numpy as np
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt, QModelIndex
@@ -8,20 +7,20 @@ import pyqtgraph as pg
 from pyqtgraph import ViewBox
 from gui.ClusterSelector import ClusterSelector
 from gui.ChannelSelector import ChannelSelector
+from gui.FeaturesPlot import FeaturesPlot
 from spikedata import SpikeData
 from spikefeatures import SpikeFeatures
+
 
 # noinspection PyPep8Naming
 class MainWindow(QMainWindow):
     spikeData: list[SpikeData]
     spikeFeatures: list[SpikeFeatures]
+    spikeLabels: list[np.ndarray]
 
     toolbar: QToolBar
     viewMenu: QMenu
-    waveformPlot: pg.PlotItem
-    xyFeaturesPlot: pg.PlotItem
-    xzFeaturesPlot: pg.PlotItem
-    yzFeaturesPlot: pg.PlotItem
+    featuresPlot: FeaturesPlot
     channelSelector: ChannelSelector
     clusterSelector: ClusterSelector
 
@@ -38,12 +37,13 @@ class MainWindow(QMainWindow):
         self.toolbar = self.createToolbar()
         self.viewMenu = self.menuBar().addMenu("&View")
 
-        featuresWidget = self.createFeaturesWidget()
-        self.setCentralWidget(featuresWidget)
+        self.featuresPlot = FeaturesPlot(self)
+        self.setCentralWidget(self.featuresPlot)
 
         # ChannelSelector
         dock = QDockWidget("Channels", self)
-        self.channelSelector = ChannelSelector([sd.channel for sd in spikeData], [sd.electrode for sd in spikeData], dock)
+        self.channelSelector = ChannelSelector(dock)
+        self.channelSelector.load(spikeData)
         dock.setWidget(self.channelSelector)
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetMovable)
@@ -53,7 +53,7 @@ class MainWindow(QMainWindow):
         # ClusterSelector
         dock = QDockWidget("Clusters", self)
         self.clusterSelector = ClusterSelector(dock)
-        self.clusterSelector.model().insertRows(0, spikeLabels[0].max() + 1)
+        self.clusterSelector.load(spikeLabels[self.channelSelector.currentChannel])
         dock.setWidget(self.clusterSelector)
         dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetMovable)
@@ -62,6 +62,18 @@ class MainWindow(QMainWindow):
 
         self.setDockOptions(QMainWindow.AllowNestedDocks)
         self.setTabPosition(Qt.AllDockWidgetAreas, QTabWidget.North)
+
+        # Set up connections
+        # Handle channel change
+        self.channelSelector.currentIndexChanged.connect(self.onChannelChanged)
+        self.channelSelector.currentIndexChanged.emit(self.channelSelector.currentIndex)
+
+        # Handle cluster visibility change
+        self.clusterSelector.itemCheckStateChanged.connect(self.featuresPlot.setClusterVisible)
+
+    def onChannelChanged(self, i: int):
+        self.clusterSelector.load(self.spikeLabels[i])
+        self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.spikeLabels[i])
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData
@@ -76,41 +88,6 @@ class MainWindow(QMainWindow):
         toolbar.addAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Save")
         return toolbar
 
-    def createFeaturesWidget(self):
-        # Create layout for 3 plots (waveform, features xy, features xz, features yz)
-        # dock = QDockWidget("Waveform features", self)
-        layout = QGridLayout()
-        pw = pg.PlotWidget()
-        self.waveformPlot = pw.getPlotItem()
-        layout.addWidget(pw, 0, 1)
-        pw = pg.PlotWidget()
-        self.xyFeaturesPlot = pw.getPlotItem()
-        layout.addWidget(pw, 0, 0)
-        pw = pg.PlotWidget()
-        self.xzFeaturesPlot = pw.getPlotItem()
-        layout.addWidget(pw, 1, 0)
-        pw = pg.PlotWidget()
-        self.yzFeaturesPlot = pw.getPlotItem()
-        layout.addWidget(pw, 1, 1)
-        # Link x,y,z axes
-        import weakref
-        xyView = self.xyFeaturesPlot.getViewBox()
-        xzView = self.xzFeaturesPlot.getViewBox()
-        yzView = self.yzFeaturesPlot.getViewBox()
-        from gui.pyqtgraph_utils import linkAxes
-        linkAxes(xyView, yzView, ViewBox.YAxis, ViewBox.XAxis, reciprocal=True)
-        linkAxes(xyView, xzView, ViewBox.XAxis, ViewBox.XAxis, reciprocal=True)
-        linkAxes(yzView, xzView, ViewBox.YAxis, ViewBox.YAxis, reciprocal=True)
-        layoutWidget = QWidget(self)
-        layoutWidget.setLayout(layout)
-        return layoutWidget
-
-    @staticmethod
-    def _create_plots():
-        plt_waveform_raw = pg.PlotWidget()
-        plt_waveform_mean = pg.PlotWidget()
-
-        return plt_waveform_raw, plt_waveform_mean
 
 
 def start_app():

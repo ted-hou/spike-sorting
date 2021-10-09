@@ -1,7 +1,8 @@
 import typing
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, pyqtSignal
 from PyQt5.QtGui import QResizeEvent
+from spikedata import SpikeData
 
 COMBOBOX_WIDTH = 38
 BUTTON_WIDTH = 25
@@ -12,6 +13,7 @@ WIDTH_THRESHOLD_1 = 230
 WIDTH_THRESHOLD_2 = 185
 MIN_WIDTH = 160
 MIN_HEIGHT = 30
+
 
 # noinspection PyPep8Naming
 class ChannelSelector(QWidget):
@@ -30,15 +32,38 @@ class ChannelSelector(QWidget):
     _sizeHint = QSize(WIDTH_THRESHOLD_2, MIN_HEIGHT + 10)
     _minSizeHint = QSize(MIN_WIDTH, MIN_HEIGHT)
 
-    def __init__(self, channels, electrodes, parent: QWidget = None,
-                 flags: typing.Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags()):
+    # Signals
+    currentIndexChanged = pyqtSignal(int)
+
+    def __init__(self, parent: QWidget = None, flags: typing.Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags()):
         super().__init__(parent, flags)
-        self.channels = channels
-        self.electrodes = electrodes
         self.createWidgets()
-        self.setCurrentIndex(0)
         self.setSizeLimits(comboBoxWidth=COMBOBOX_WIDTH, buttonWidth=BUTTON_WIDTH, itemHeight=ITEM_HEIGHT, spacing=SPACING, margin=MARGIN)
         self.createConnections()
+
+    def load(self, spikeData: typing.Union[SpikeData, list[SpikeData]]):
+        self.channelComboBox.clear()
+        self.electrodeComboBox.clear()
+
+        # load(None) clears all data
+        if spikeData is None:
+            self.channels = []
+            self.electrodes = []
+            return
+
+        # load list of SpikeData
+        if type(spikeData) is list:
+            self.channels = [sd.channel for sd in spikeData]
+            self.electrodes = [sd.electrode for sd in spikeData]
+        elif isinstance(spikeData, SpikeData):
+            self.channels = [spikeData.channel]
+            self.electrodes = [spikeData.electrode]
+        else:
+            raise TypeError(f"spikeData is {type(spikeData)}, expected list[SpikeData], or SpikeData.")
+
+        self.channelComboBox.insertItems(0, [str(i) for i in self.channels])
+        self.electrodeComboBox.insertItems(0, [str(i) for i in self.electrodes])
+        self.setCurrentIndex(0)
 
     def setSizeLimits(self, comboBoxWidth, buttonWidth, itemHeight, spacing=2, margin=11):
         buttonSize = (buttonWidth, itemHeight)
@@ -48,7 +73,6 @@ class ChannelSelector(QWidget):
         self.electrodeComboBox.setMinimumSize(*comboBoxSize)
         self.prevButton.setMaximumSize(*buttonSize)
         self.nextButton.setMaximumSize(*buttonSize)
-
 
         layout = self.layout()
         layout.setSpacing(spacing)
@@ -80,11 +104,11 @@ class ChannelSelector(QWidget):
         rightButton = QPushButton(">")
         channelLabel = QLabel("chn:")
         channelComboBox = QComboBox()
-        channelComboBox.insertItems(0, [str(i) for i in self.channels])
+        # channelComboBox.insertItems(0, [str(i) for i in self.channels])
 
         electrodeLabel = QLabel("elec:")
         electrodeComboBox = QComboBox()
-        electrodeComboBox.insertItems(0, [str(i) for i in self.electrodes])
+        # electrodeComboBox.insertItems(0, [str(i) for i in self.electrodes])
 
         layout.addStretch(1)
         layout.addWidget(leftButton, 1)
@@ -141,13 +165,16 @@ class ChannelSelector(QWidget):
         self.channelComboBox.setCurrentIndex(i)
         self.electrodeComboBox.setCurrentIndex(i)
 
+        self.currentIndexChanged.emit(self.currentIndex)
+
     def setCurrentChannel(self, channel: int):
         i = self.channels.index(channel)
         if i < 0:
             raise ValueError(f"Requested channel ({channel}) not available")
-        self.setCurrentChannel(i)
+        self.setCurrentIndex(i)
 
     def setCurrentElectrode(self, electrode: int):
         channel = self.electrodes.index(electrode)
         if channel < 0:
             raise ValueError(f"Requested electrode ({electrode}) not found.")
+        self.setCurrentChannel(channel)

@@ -13,7 +13,7 @@ cont_data.read(file, channels=range(32), n_samples=30000, electrodes=None)
 # Spike detection
 spike_data = spikedetect.find_waveforms(cont_data, direction=-1, n_sigmas=2.0, n_sigmas_reject=40.0,
                                         n_sigmas_return=1.0)
-# spike_data = spike_data[0]
+del cont_data
 
 # Spike sorting
 spike_features = extract_features(spike_data, ndims=5, method='haar')

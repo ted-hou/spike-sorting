@@ -31,12 +31,14 @@ def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray =
 
     if labels is None:
         waveforms = spike_data.waveforms * spike_data.waveform_conversion_factor
-        _plot_waveforms(plt, waveforms, spike_data.waveform_timestamps, color='k', mode=mode, prct=prct)
+        items = [_plot_waveforms(plt, waveforms, spike_data.waveform_timestamps, color='k', mode=mode, prct=prct)]
     else:
+        items = []
         for i_cluster in range(np.max(labels)+1):
             waveforms = spike_data.waveforms[labels == i_cluster] * spike_data.waveform_conversion_factor
-            _plot_waveforms(plt, waveforms=waveforms, timestamps=spike_data.waveform_timestamps,
-                            color=gui.default_color(i_cluster), mode=mode, prct=prct)
+            itemsInCluster = _plot_waveforms(plt, waveforms=waveforms, timestamps=spike_data.waveform_timestamps,
+                                             color=gui.default_color(i_cluster), mode=mode, prct=prct)
+            items.append(itemsInCluster)
 
     # Set axis limits
     if isinstance(yrange, (tuple, list)):
@@ -60,7 +62,7 @@ def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray =
     if make_new_plot:
         app.exec_()
 
-    return plt
+    return plt, items
 
 
 def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndarray, color='k',
@@ -71,7 +73,7 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
                                     c=color)
         plt.addItem(curves)
         # plt.setTitle('waveforms (raw)')
-        return curves
+        return [curves]
     elif mode == 'mean':
         mean = waveforms.mean(axis=0)
         sd = waveforms.std(axis=0)
@@ -101,7 +103,7 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
         plt.addItem(sd_fill)
         plt.addItem(prct_fill)
         # plt.setTitle(f"waveforms (mean&#177;sd, {prct:d} - {100 - prct:d}% prct)")
-        return mean_curve, sd_pos_curve, sd_neg_curve, prct_hi_curve, prct_lo_curve, sd_fill, prct_fill
+        return [mean_curve, sd_pos_curve, sd_neg_curve, prct_hi_curve, prct_lo_curve, sd_fill, prct_fill]
     else:
         raise ValueError(f"Unrecognized plot mode '{mode}', expected 'raw', 'mean'")
 
@@ -147,12 +149,15 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
         color = pg.mkColor('k')
         scatter = pg.ScatterPlotItem(pos=features, pen=pg.mkPen(color), brush=pg.mkBrush(color), size=2)
         plt.addItem(scatter)
+        items = [[scatter]]
     else:
+        items = []
         for i_cluster in range(np.max(labels)+1):
             features = spike_features.features[labels == i_cluster, :][:, dims]
             color = gui.default_color(i_cluster)
             scatter = pg.ScatterPlotItem(pos=features, pen=pg.mkPen(color), brush=pg.mkBrush(color), size=2)
             plt.addItem(scatter)
+            items.append([scatter])
 
     plt.setLabel('bottom', xlabel)
     plt.setLabel('left', ylabel)
@@ -160,7 +165,7 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
     if make_new_plot:
         app.exec_()
 
-    return plt
+    return plt, items
 
 
 def _get_or_create_app():
