@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from scipy.cluster.vq import kmeans2
 from spikefeatures import SpikeFeatures, SpikeFeaturesPCA, SpikeFeaturesHaar, SpikeFeaturesDb4
@@ -50,3 +52,35 @@ def cluster(data, n_clusters=3, method='kmeans'):
         return labels
     else:
         raise ValueError(f"Unsupported clustering method {method}, expected 'kmeans', 'gaussian', 'nn'")
+
+
+def reorder_clusters(labels: np.ndarray, from_index: int, to_index: int, in_place=False):
+    """
+    Reorder existing cluster labels by moving one cluster to a new index. Other cluster indices will be shifted by one.
+    By default returns a modified copy, unless in_place=True
+
+    :param labels: 1d NumPy array containing cluster labels [0, N)
+    :param from_index: cluster index to be moved
+    :param to_index: new index to move to
+    :param in_place: (default False) True to modify original labels array. False to return a modified copy.
+    :return: modified cluster labels.
+    """
+    out_labels = labels if in_place else labels.copy()
+
+    # Moving up
+    if to_index < from_index:
+        is_source = labels == from_index
+        for i_cluster in range(from_index - 1, to_index - 1, -1):
+            out_labels[labels == i_cluster] = i_cluster + 1
+        out_labels[is_source] = to_index
+    # Moving down
+    elif to_index > from_index:
+        is_source = labels == from_index
+        for i_cluster in range(from_index + 1, to_index + 1):
+            out_labels[labels == i_cluster] = i_cluster - 1
+        out_labels[is_source] = to_index
+    # Moving in place
+    else:
+        warnings.warn(f"Moving cluster {from_index} to {to_index} does nothing.")
+
+    return out_labels

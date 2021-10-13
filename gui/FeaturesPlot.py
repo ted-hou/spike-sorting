@@ -3,7 +3,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import *
 from pyqtgraph import ViewBox
 from gui.pyqtgraph_utils import linkAxes
-from gui.plot import plot_waveforms, plot_features
+from gui.plot import *
 
 
 # noinspection PyPep8Naming
@@ -45,7 +45,7 @@ class FeaturesPlot(QWidget):
         linkAxes(yzView, xzView, ViewBox.YAxis, ViewBox.YAxis, reciprocal=True)
         self.setLayout(layout)
 
-    def plot(self, spikeData, spikeFeatures, spikeLabels):
+    def plot(self, spikeData, spikeFeatures, spikeLabels, clusterVisible=None):
         self.waveformPlot.clear()
         self.xyPlot.clear()
         self.xzPlot.clear()
@@ -71,6 +71,10 @@ class FeaturesPlot(QWidget):
             for i in range(len(self.itemsPerCluster)):
                 self.itemsPerCluster[i].extend(yzItems[i])
 
+        if clusterVisible is not None and self.itemsPerCluster:
+            for i in range(len(self.itemsPerCluster)):
+                self.setClusterVisible(i, clusterVisible[i])
+
     def setClusterVisible(self, index, visible=True):
         for item in self.itemsPerCluster[index]:
             item.setVisible(visible)
@@ -88,3 +92,38 @@ class FeaturesPlot(QWidget):
             self.xzPlot.autoRange()
         if waveforms:
             self.waveformPlot.autoRange()
+
+    def reorder(self, from_index, to_index):
+        """
+        Reassign colors after moving a cluster index. Only RGB values are reassinged based on gui.default_colors(
+        index). Color Alpha, brush/pen settings will be preserved. This requires the stored QGraphicsItem to have
+        custom data attached via QGraphicsItem.setData()
+
+        :param from_index: old index of the cluster to be moved
+        :param to_index: new index after a cluster was moved
+        :return: None
+        """
+        # Reorder plot items so they appear in the new order
+        ipc = self.itemsPerCluster
+        ipc.insert(to_index, ipc.pop(from_index))
+
+        # Re-assign colors
+        for i in range(len(self.itemsPerCluster)):
+            for item in self.itemsPerCluster[i]:
+                pen: QPen = QGraphicsObject.data(item, DATA_PEN)
+                brush: QBrush = QGraphicsObject.data(item, DATA_BRUSH)
+                newColor = gui.default_color(i)
+                if pen is not None:
+                    color = pen.color()
+                    newColor.setAlpha(color.alpha())
+                    pen.setColor(newColor)
+                    item.setPen(pen)
+                if brush is not None:
+                    color = brush.color()
+                    newColor.setAlpha(color.alpha())
+                    brush.setColor(newColor)
+                    item.setBrush(brush)
+
+
+
+

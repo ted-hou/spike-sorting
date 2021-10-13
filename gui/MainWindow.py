@@ -2,9 +2,7 @@ import sys
 import typing
 import numpy as np
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QModelIndex
-import pyqtgraph as pg
-from pyqtgraph import ViewBox
+from PyQt5.QtCore import Qt
 from gui.ClusterSelector import ClusterSelector
 from gui.ChannelSelector import ChannelSelector
 from gui.FeaturesPlot import FeaturesPlot
@@ -71,9 +69,18 @@ class MainWindow(QMainWindow):
         # Handle cluster visibility change
         self.clusterSelector.itemCheckStateChanged.connect(self.featuresPlot.setClusterVisible)
 
+        # Handle cluster index reordering
+        self.clusterSelector.itemMoved.connect(self.onClusterMoved)
+
     def onChannelChanged(self, i: int):
         self.clusterSelector.load(self.spikeLabels[i])
         self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.spikeLabels[i])
+
+    def onClusterMoved(self, from_index: int, to_index: int):
+        from spikesorting import reorder_clusters
+        i = self.channelSelector.currentIndex
+        reorder_clusters(self.spikeLabels[i], from_index, to_index, in_place=True)
+        self.featuresPlot.reorder(from_index, to_index)
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData
@@ -87,7 +94,6 @@ class MainWindow(QMainWindow):
         toolbar.addAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Open")
         toolbar.addAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Save")
         return toolbar
-
 
 
 def start_app():

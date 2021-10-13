@@ -97,7 +97,7 @@ class ClusterSelector(QListView):
             if count > 1:
                 raise ValueError(f"Error attempting to move {count} items. Only moving one item at a time is supported.")
 
-            print(f"Moveing rows ({sourceRow} - {sourceRow + count - 1}) to {destinationChild}")
+            # print(f"Moveing rows ({sourceRow} - {sourceRow + count - 1}) to {destinationChild}")
             # When moving within the same parent, beginMoveRows() is weird:
             # it expects destinationChild to be expectedNewIndex+1 when moving downwards
             # it expects destinationChild to be expectedNewIndex when moving upwards
@@ -108,6 +108,7 @@ class ClusterSelector(QListView):
             for i in range(count):
                 self.itemData.insert(destinationChild, self.itemData.pop(sourceRow))
             self.endMoveRows()
+            # self.rowsMoved.emit(sourceParent, sourceRow, sourceRow + count - 1, destinationParent, destinationChild)
             return True
 
         # To make items checkable, override flags method and and add Qt.ItemIsUserCheckable
@@ -240,7 +241,7 @@ class ClusterSelector(QListView):
                 return False
 
     itemCheckStateChanged = pyqtSignal(int, bool)
-    itemMoved = pyqtSignal(int, int)
+    itemMoved = pyqtSignal(int, int) # from_index, to_index, everything between is assumed to be shifted by 1 in the appropriate direction
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
@@ -251,6 +252,19 @@ class ClusterSelector(QListView):
         self.setSelectionRectVisible(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
+
+        # Pass rowsMoved event
+        model.rowsMoved.connect(self.onRowsMoved)
+
+    def onRowsMoved(self, parent: QModelIndex, start: int, end: int, destination: QModelIndex, row: int):
+        if end != start:
+            raise ValueError("Moving multiple items is not supported.")
+        isMovingDown = row > start
+        # Qt does this weird thing: when you move an item down, destination row in the emitted signal is 1 greater
+        # than the actual position it ends up in
+        if isMovingDown:
+            row -= 1
+        self.itemMoved.emit(start, row)
 
     def dataChanged(self, top: QModelIndex, bottom: QModelIndex, roles: typing.Iterable[int] = (), *args, **kwargs):
         super().dataChanged(top, bottom, roles)
@@ -264,9 +278,19 @@ class ClusterSelector(QListView):
         model = self.model()
         model.reset()
 
-        # Empty labels -> show nothing
+        # Empty cluster labels -> show nothing
         if spikeLabels is None or (isinstance(spikeLabels, np.ndarray) and spikeLabels.size == 0):
             return
 
         # Add data
         model.insertRows(0, spikeLabels.max() + 1)
+
+    def isItemChecked(self, i: int):
+        return self.model().isChecked(i)
+
+    def getItemName(self, i: int):
+        model = self.model()
+        return model.data(model.index(i, 0), Qt.DisplayRole).name
+
+    def count(self):
+        return self.model().rowCount()

@@ -1,7 +1,10 @@
 import typing
 import numpy as np
 import pyqtgraph as pg
-from PyQt5 import QtCore, QtWidgets
+# from PyQt5 import QtCore, QtWidgets
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import QColor, QBrush, QPen
 import gui
 from gui.pyqtgraph_utils import MultiCurvePlotItem
 from spikedata import SpikeData
@@ -9,6 +12,10 @@ from spikefeatures import SpikeFeatures
 
 pg.setConfigOption('background', pg.mkColor(.9, .9, .9, .25))
 pg.setConfigOption('foreground', 'k')
+
+
+DATA_PEN = 0
+DATA_BRUSH = 1
 
 
 def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray = None, mode='mean', yrange=None,
@@ -81,19 +88,30 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
         prct_lo = np.percentile(waveforms, prct, axis=0)
 
         color = pg.mkColor(color)
-        mean_curve = pg.PlotCurveItem(x=timestamps, y=mean, pen=pg.mkPen(color, width=2, style=QtCore.Qt.SolidLine))
+        pen = pg.mkPen(color, width=2, style=Qt.SolidLine)
+        mean_curve = pg.PlotCurveItem(x=timestamps, y=mean, pen=pg.mkPen(color, width=2, style=Qt.SolidLine))
+        QGraphicsItem.setData(mean_curve, DATA_PEN, pen)
+
         color.setAlphaF(0.5)
-        sd_pos_curve = pg.PlotCurveItem(x=timestamps, y=mean + sd,
-                                        pen=pg.mkPen(color, width=1, style=QtCore.Qt.DotLine))
-        sd_neg_curve = pg.PlotCurveItem(x=timestamps, y=mean - sd,
-                                        pen=pg.mkPen(color, width=1, style=QtCore.Qt.DotLine))
-        prct_hi_curve = pg.PlotCurveItem(x=timestamps, y=prct_hi,
-                                         pen=pg.mkPen(color, width=1, style=QtCore.Qt.DashLine))
-        prct_lo_curve = pg.PlotCurveItem(x=timestamps, y=prct_lo,
-                                         pen=pg.mkPen(color, width=1, style=QtCore.Qt.DashLine))
+        pen.setWidth(1)
+        pen.setStyle(Qt.DotLine)
+        sd_pos_curve = pg.PlotCurveItem(x=timestamps, y=mean + sd, pen=pen)
+        sd_neg_curve = pg.PlotCurveItem(x=timestamps, y=mean - sd, pen=pen)
+        QGraphicsItem.setData(sd_pos_curve, DATA_PEN, pen)
+        QGraphicsItem.setData(sd_neg_curve, DATA_PEN, pen)
+
+        pen.setStyle(Qt.DashLine)
+        prct_hi_curve = pg.PlotCurveItem(x=timestamps, y=prct_hi, pen=pen)
+        prct_lo_curve = pg.PlotCurveItem(x=timestamps, y=prct_lo, pen=pen)
+        QGraphicsItem.setData(prct_hi_curve, DATA_PEN, pen)
+        QGraphicsItem.setData(prct_lo_curve, DATA_PEN, pen)
+
         color.setAlphaF(0.25)
-        sd_fill = pg.FillBetweenItem(curve1=sd_pos_curve, curve2=sd_neg_curve, brush=pg.mkBrush(color))
-        prct_fill = pg.FillBetweenItem(curve1=prct_hi_curve, curve2=prct_lo_curve, brush=pg.mkBrush(color))
+        brush = pg.mkBrush(color)
+        sd_fill = pg.FillBetweenItem(curve1=sd_pos_curve, curve2=sd_neg_curve, brush=brush)
+        prct_fill = pg.FillBetweenItem(curve1=prct_hi_curve, curve2=prct_lo_curve, brush=brush)
+        QGraphicsItem.setData(sd_fill, DATA_BRUSH, brush)
+        QGraphicsItem.setData(prct_fill, DATA_BRUSH, brush)
 
         plt.addItem(mean_curve)
         plt.addItem(sd_pos_curve)
@@ -155,7 +173,11 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
         for i_cluster in range(np.max(labels)+1):
             features = spike_features.features[labels == i_cluster, :][:, dims]
             color = gui.default_color(i_cluster)
-            scatter = pg.ScatterPlotItem(pos=features, pen=pg.mkPen(color), brush=pg.mkBrush(color), size=2)
+            pen = pg.mkPen(color)
+            brush = pg.mkBrush(color)
+            scatter = pg.ScatterPlotItem(pos=features, pen=pen, brush=brush, size=2)
+            QGraphicsItem.setData(scatter, DATA_PEN, pen)
+            QGraphicsItem.setData(scatter, DATA_BRUSH, brush)
             plt.addItem(scatter)
             items.append([scatter])
 
@@ -169,9 +191,9 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
 
 
 def _get_or_create_app():
-    app = QtWidgets.QApplication.instance()
+    app = QApplication.instance()
     if app is None:
-        app = QtWidgets.QApplication([])
+        app = QApplication([])
     return app
 
 
