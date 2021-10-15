@@ -70,17 +70,17 @@ class MainWindow(QMainWindow):
         self.clusterSelector.itemCheckStateChanged.connect(self.featuresPlot.setClusterVisible)
 
         # Handle cluster index reordering
-        self.clusterSelector.itemMoved.connect(self.onClusterMoved)
+        self.clusterSelector.itemsMoved.connect(self.onClusterMoved)
 
     def onChannelChanged(self, i: int):
-        self.clusterSelector.load(self.spikeLabels[i])
+        self.clusterSelector.load(self.spikeLabels[i], seed=self.spikeData[i].electrode + 12345)
         self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.spikeLabels[i])
 
-    def onClusterMoved(self, from_index: int, to_index: int):
-        from spikesorting import reorder_clusters
+    def onClusterMoved(self, source: int, count: int, destination: int):
+        from spikesorting import move_clusters
         i = self.channelSelector.currentIndex
-        reorder_clusters(self.spikeLabels[i], from_index, to_index, in_place=True)
-        self.featuresPlot.reorder(from_index, to_index)
+        move_clusters(self.spikeLabels[i], source, count, destination, in_place=True)
+        self.featuresPlot.reorder(source, count, destination)
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData

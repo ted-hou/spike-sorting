@@ -36,8 +36,10 @@ class ClusterSelector(QListView):
                 if not isinstance(color, QColor):
                     raise TypeError(f"color is type {type(color)}, expected QColor or str")
                 if self.highlighted:
-                    self.bg = color
-                    self.fg = QColor('white')
+                    self.bg = QColor('white')
+                    self.fg = color
+                    # self.bg = color
+                    # self.fg = QColor('white')
                 else:
                     self.bg = QColor('white')
                     self.fg = color
@@ -46,12 +48,12 @@ class ClusterSelector(QListView):
             def setHighlight(self, highlight=True):
                 if highlight:
                     self.font.setBold(True)
-                    self.bg = self.color
-                    self.fg = QColor('white')
+                    # self.bg = self.color
+                    # self.fg = QColor('white')
                 else:
                     self.font.setBold(False)
-                    self.bg = QColor('white')
-                    self.fg = self.color
+                    # self.bg = QColor('white')
+                    # self.fg = self.color
 
         # Data
         itemData: list[ItemData] = []
@@ -94,21 +96,24 @@ class ClusterSelector(QListView):
             return True
 
         def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex, destinationChild: int) -> bool:
-            if count > 1:
-                raise ValueError(f"Error attempting to move {count} items. Only moving one item at a time is supported.")
-
-            # print(f"Moveing rows ({sourceRow} - {sourceRow + count - 1}) to {destinationChild}")
-            # When moving within the same parent, beginMoveRows() is weird:
-            # it expects destinationChild to be expectedNewIndex+1 when moving downwards
+            print(f"moveRows(): Moving ({sourceRow} - {sourceRow + count - 1}) to {destinationChild}")
+            # When moving within the same parent, moveRows() is weird:
+            # it expects destinationChild to be expectedNewIndex+count when moving downwards
             # it expects destinationChild to be expectedNewIndex when moving upwards
-            if not self.beginMoveRows(QModelIndex(), sourceRow, sourceRow + count - 1, QModelIndex(), destinationChild + 1 if sourceRow < destinationChild else destinationChild):
+            if not self.beginMoveRows(QModelIndex(), sourceRow, sourceRow + count - 1, QModelIndex(), destinationChild):
                 return False
 
-            # sourceRow = sourceRow + count - 1 if destinationChild < sourceRow else sourceRow
-            for i in range(count):
-                self.itemData.insert(destinationChild, self.itemData.pop(sourceRow))
+            # Moving up
+            if sourceRow > destinationChild:
+                movedItems = self.itemData[sourceRow:sourceRow + count]
+                del self.itemData[sourceRow:sourceRow + count]
+                self.itemData[destinationChild:destinationChild] = movedItems
+            # Moving down
+            else:
+                self.itemData[destinationChild:destinationChild] = self.itemData[sourceRow:sourceRow + count]
+                del self.itemData[sourceRow:sourceRow + count]
+
             self.endMoveRows()
-            # self.rowsMoved.emit(sourceParent, sourceRow, sourceRow + count - 1, destinationParent, destinationChild)
             return True
 
         # To make items checkable, override flags method and and add Qt.ItemIsUserCheckable
@@ -133,7 +138,7 @@ class ClusterSelector(QListView):
             elif role == Qt.CheckStateRole:
                 oldValue = self.itemData[index.row()].checked
                 value = value == Qt.Checked
-                self.setChecked(index, value)
+                self.setCheckState(index, value)
                 if oldValue != value:
                     self.dataChanged.emit(index, index, [role])
                 return True
@@ -145,9 +150,9 @@ class ClusterSelector(QListView):
             if not index.isValid():
                 return QVariant()
             if role == Qt.DisplayRole:
-                return self.itemData[index.row()].name
+                return f"{index.row() + 1} - {self.itemData[index.row()].name}"
             elif role == Qt.CheckStateRole:
-                if self.isChecked(index):
+                if self.getCheckState(index):
                     return Qt.Checked
                 else:
                     return Qt.Unchecked
@@ -174,13 +179,11 @@ class ClusterSelector(QListView):
             encoded_data = QByteArray()
             stream = QDataStream(encoded_data, QIODevice.WriteOnly)
 
-            for index in indexes:
-                if index.isValid():
-                    # name = self.data(index, Qt.DisplayRole)
-                    # checked = self.data(index, Qt.CheckStateRole)
-                    stream.writeInt(index.row())
-                    # stream.writeQString(name)
-                    # stream.writeInt8(checked)
+            rows = [index.row() for index in indexes if index.isValid()]
+            rows.sort() # Sort row indices in ascending order
+
+            for i in rows:
+                stream.writeInt(i)
 
             mime_data.setData(self._mimeType, encoded_data)
             return mime_data
@@ -201,29 +204,49 @@ class ClusterSelector(QListView):
             # Decode data to determine source index:
             encoded_data = data.data(self._mimeType)
             stream = QDataStream(encoded_data, QIODevice.ReadOnly)
+            sourceRow = stream.readInt()
+            count = 1
             while not stream.atEnd():
-                sourceRow = stream.readInt()
-                # self.moveRows(QModelIndex(), srcRow, 1, QModelIndex(), tgtRow)
-            if not stream.atEnd():
-                raise ValueError("MIME stream contains more than one entry. Only single-item drag and drops are supported.")
+                nextSourceRow = stream.readInt()
+                # Ensure row indices are contiguous and in ascending order
+                if nextSourceRow - sourceRow != count:
+                    raise ValueError("Row indices from MIME stream are not contiguous and in ascending order.")
+                count += 1
+
+            print(f"sourceRow = {sourceRow}, row = {row}, parent {parent.row() if parent.isValid() else 'invalid'}")
 
             # Insert at specific node
             if row != -1:
-                destinationRow = row
+                destinationRow = row # - 1 if row > sourceRow else row # Moving down is different from moving up
             # Dropping on another item -> insert before it
             elif parent.isValid():
                 destinationRow = parent.row()
             # Dropping at blank space below everything -> insert at bottom
             else:
-                destinationRow = self.rowCount() - 1
+                destinationRow = self.rowCount()
 
-            self.moveRows(QModelIndex(), sourceRow, 1, QModelIndex(), destinationRow)
+            self.moveRows(QModelIndex(), sourceRow, count, QModelIndex(), destinationRow)
 
             return False
 
-        def setChecked(self, index: typing.Union[int, QModelIndex], checked=True) -> bool:
+        def setName(self, index: typing.Union[int, QModelIndex], value: str) -> bool:
             if type(index) is int:
-                index = self.index(index, index)
+                index = self.index(index, 0)
+            if not index.isValid():
+                return False
+            self.itemData[index.row()].name = value
+            return True
+
+        def getName(self, index: typing.Union[int, QModelIndex]):
+            if type(index) is int:
+                index = self.index(index, 0)
+            if not index.isValid():
+                return None
+            return self.itemData[index.row()].name
+
+        def setCheckState(self, index: typing.Union[int, QModelIndex], checked=True) -> bool:
+            if type(index) is int:
+                index = self.index(index, 0)
 
             if not index.isValid():
                 return False
@@ -232,7 +255,7 @@ class ClusterSelector(QListView):
             self.itemStyles[index.row()].setHighlight(checked)
             return True
 
-        def isChecked(self, index: typing.Union[int, QModelIndex]) -> bool:
+        def getCheckState(self, index: typing.Union[int, QModelIndex]) -> bool:
             if type(index) is int:
                 index = self.index(index, 0)
             if index.isValid():
@@ -241,7 +264,7 @@ class ClusterSelector(QListView):
                 return False
 
     itemCheckStateChanged = pyqtSignal(int, bool)
-    itemMoved = pyqtSignal(int, int) # from_index, to_index, everything between is assumed to be shifted by 1 in the appropriate direction
+    itemsMoved = pyqtSignal(int, int, int)  # source, count, destination
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
@@ -250,21 +273,14 @@ class ClusterSelector(QListView):
         self.setModel(model)
         self.setDropIndicatorShown(True)
         self.setSelectionRectVisible(True)
-        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.ContiguousSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         # Pass rowsMoved event
         model.rowsMoved.connect(self.onRowsMoved)
 
     def onRowsMoved(self, parent: QModelIndex, start: int, end: int, destination: QModelIndex, row: int):
-        if end != start:
-            raise ValueError("Moving multiple items is not supported.")
-        isMovingDown = row > start
-        # Qt does this weird thing: when you move an item down, destination row in the emitted signal is 1 greater
-        # than the actual position it ends up in
-        if isMovingDown:
-            row -= 1
-        self.itemMoved.emit(start, row)
+        self.itemsMoved.emit(start, end - start + 1, row)
 
     def dataChanged(self, top: QModelIndex, bottom: QModelIndex, roles: typing.Iterable[int] = (), *args, **kwargs):
         super().dataChanged(top, bottom, roles)
@@ -274,7 +290,7 @@ class ClusterSelector(QListView):
             for i in range(top.row(), bottom.row() + 1):
                 self.itemCheckStateChanged.emit(i, self.model().isChecked(i))
 
-    def load(self, spikeLabels: np.ndarray):
+    def load(self, spikeLabels: np.ndarray, clusterNames: list[str] = None, seed: int = None):
         model = self.model()
         model.reset()
 
@@ -283,14 +299,146 @@ class ClusterSelector(QListView):
             return
 
         # Add data
-        model.insertRows(0, spikeLabels.max() + 1)
+        nClusters = spikeLabels.max(initial=-1) + 1 + 10
+        model.insertRows(0, nClusters)
+        if clusterNames is None:
+            clusterNames = self.randomNames(seed=seed, count=nClusters)
+        for i in range(nClusters):
+            model.setName(i, clusterNames[i])
 
-    def isItemChecked(self, i: int):
+    def getItemCheckState(self, i: int):
         return self.model().isChecked(i)
 
     def getItemName(self, i: int):
         model = self.model()
-        return model.data(model.index(i, 0), Qt.DisplayRole).name
+        return model.getName(i)
+        # return model.data(model.index(i, 0), Qt.DisplayRole).name
 
     def count(self):
         return self.model().rowCount()
+
+    @staticmethod
+    def randomNames(seed: int = None, count: int = 1):
+        names = (
+            "Aardvark",
+            "Alligator",
+            "Alpaca",
+            "Anaconda",
+            "Antelope",
+            "Ape",
+            "Armadillo",
+            "Baboon",
+            "Badger",
+            "Barracuda",
+            "Bear",
+            "Beaver",
+            "Bird",
+            "Bison",
+            "BlueJay",
+            "Bobcat",
+            "Buffalo",
+            "Butterfly",
+            "Buzzard",
+            "Camel",
+            "Caribou",
+            "Carp",
+            "Cat",
+            "Caterpillar",
+            "Catfish",
+            "Cheetah",
+            "Chicken",
+            "Chimpanzee",
+            "Chipmunk",
+            "Cobra",
+            "Cod",
+            "Condor",
+            "Cougar",
+            "Cow",
+            "Coyote",
+            "Crab",
+            "Crane",
+            "Cricket",
+            "Crocodile",
+            "Crow",
+            "Deer",
+            "Dinosaur",
+            "Dog",
+            "Dolphin",
+            "Donkey",
+            "Dove",
+            "Dragonfly",
+            "Duck",
+            "Eagle",
+            "Eel",
+            "Elephant",
+            "Emu",
+            "Falcon",
+            "Ferret",
+            "Finch",
+            "Flamingo",
+            "Fox",
+            "Frog",
+            "Goat",
+            "Goose",
+            "Gopher",
+            "Gorilla",
+            "Grasshopper",
+            "Hamster",
+            "Hare",
+            "Hawk",
+            "Hippopotamus",
+            "Horse",
+            "Hummingbird",
+            "Husky",
+            "Iguana",
+            "Impala",
+            "Kangaroo",
+            "Ladybug",
+            "Leopard",
+            "Lion",
+            "Lizard",
+            "Llama",
+            "Lobster",
+            "Mongoose",
+            "Monkey",
+            "Moose",
+            "Mule",
+            "Octopus",
+            "Orca",
+            "Ostrich",
+            "Otter",
+            "Owl",
+            "Ox",
+            "Oyster",
+            "Panda",
+            "Panther",
+            "Parrot",
+            "Peacock",
+            "Pelican",
+            "Penguin",
+            "Perch",
+            "Pheasant",
+            "Pig",
+            "Pigeon",
+            "Porcupine",
+            "Quail",
+            "Rabbit",
+            "Raccoon",
+            "Rattlesnake",
+            "Raven",
+            "Rooster",
+            "SeaLion",
+            "Sheep",
+            "Skunk",
+            "Snail",
+            "Snake",
+            "Tiger",
+            "Walrus",
+            "Whale",
+            "Wolf",
+            "Zebra",
+        )
+        import random
+        random.seed(seed)
+        return random.sample(names, count)
+

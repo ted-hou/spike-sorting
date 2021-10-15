@@ -93,11 +93,11 @@ class FeaturesPlot(QWidget):
         if waveforms:
             self.waveformPlot.autoRange()
 
-    def reorder(self, from_index, to_index):
+    def reorder(self, from_index: int, to_index: int):
         """
-        Reassign colors after moving a cluster index. Only RGB values are reassinged based on gui.default_colors(
-        index). Color Alpha, brush/pen settings will be preserved. This requires the stored QGraphicsItem to have
-        custom data attached via QGraphicsItem.setData()
+        Reassign colors after moving a cluster index. Only RGB values are re-acquired from gui.default_colors().
+        QBrush/QPen settings will be preserved. This is done by updating the stored QPen/QBrush objects.
+        Requires the stored QGraphicsItem to have custom data attached via QGraphicsItem.setData() to work.
 
         :param from_index: old index of the cluster to be moved
         :param to_index: new index after a cluster was moved

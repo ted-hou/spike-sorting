@@ -1,3 +1,4 @@
+import typing
 import warnings
 
 import numpy as np
@@ -54,33 +55,63 @@ def cluster(data, n_clusters=3, method='kmeans'):
         raise ValueError(f"Unsupported clustering method {method}, expected 'kmeans', 'gaussian', 'nn'")
 
 
-def reorder_clusters(labels: np.ndarray, from_index: int, to_index: int, in_place=False):
+def move_clusters(labels: np.ndarray, source: int, count: int, destination: int, in_place=False):
     """
-    Reorder existing cluster labels by moving one cluster to a new index. Other cluster indices will be shifted by one.
-    By default returns a modified copy, unless in_place=True
+    Reorder existing cluster labels by moving one cluster (or several contiguous clusters) to a new index. The new
+    cluster labels will still start at 0 and end at n_clusters. By default returns a modified copy unless in_place=True
 
     :param labels: 1d NumPy array containing cluster labels [0, N)
-    :param from_index: cluster index to be moved
-    :param to_index: new index to move to
-    :param in_place: (default False) True to modify original labels array. False to return a modified copy.
-    :return: modified cluster labels.
+    :param source: first cluster index to be moved
+    :param count: number of clusters to be moved
+    :param destination: destination index to move source to, actual index they end up in is: destination (if moving up), destination - count (if moving down)
+    :param in_place: (default False) True to modify original labels array. False to return a modified copy. Performance is the same either way
+    :return: modified cluster labels array.
     """
-    out_labels = labels if in_place else labels.copy()
+    if source == destination:
+        return
+
+    n_clusters = labels.max(initial=-1) + 1
+    old_values = list(range(n_clusters))
+    new_values = old_values.copy()
 
     # Moving up
-    if to_index < from_index:
-        is_source = labels == from_index
-        for i_cluster in range(from_index - 1, to_index - 1, -1):
-            out_labels[labels == i_cluster] = i_cluster + 1
-        out_labels[is_source] = to_index
+    if source > destination:
+        del new_values[source:source + count]
+        new_values[destination:destination] = old_values[source:source + count]
     # Moving down
-    elif to_index > from_index:
-        is_source = labels == from_index
-        for i_cluster in range(from_index + 1, to_index + 1):
-            out_labels[labels == i_cluster] = i_cluster - 1
-        out_labels[is_source] = to_index
-    # Moving in place
     else:
-        warnings.warn(f"Moving cluster {from_index} to {to_index} does nothing.")
+        new_values[destination:destination] = old_values[source:source + count]
+        del new_values[source:source + count]
 
-    return out_labels
+    return remap_clusters(labels, old_values, new_values, in_place=in_place)
+
+
+def remap_clusters(labels: np.ndarray, old_values: typing.Union[list[int], tuple[int]], new_values: typing.Union[list[int], tuple[int]], in_place=False):
+    """
+    Replace label values in labels with new values, by projecting old_values -> new_values. All values are int.
+
+    :param labels: 1d NumPy array containing cluster labels [0, N)
+    :param old_values: old values to find and replace
+    :param new_values: new values to replace with, old_values and new_values should have same length
+    :param in_place:
+    :return:
+    """
+
+    if in_place:
+        old_labels = labels.copy()
+        new_labels = labels
+    else:
+        old_labels = labels
+        new_labels = labels.copy()
+
+    if len(old_values) != len(new_values):
+        raise ValueError(f"Cannot remap labels, because old_values {len(old_values)} is not the same length as {len(new_values)}")
+
+    for i in range(len(old_values)):
+        ov = old_values[i]
+        nv = new_values[i]
+        if ov == nv:
+            continue
+        new_labels[old_labels == ov] = nv
+
+    return new_labels
