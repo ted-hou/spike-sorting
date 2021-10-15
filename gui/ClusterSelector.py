@@ -96,7 +96,6 @@ class ClusterSelector(QListView):
             return True
 
         def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex, destinationChild: int) -> bool:
-            print(f"moveRows(): Moving ({sourceRow} - {sourceRow + count - 1}) to {destinationChild}")
             # When moving within the same parent, moveRows() is weird:
             # it expects destinationChild to be expectedNewIndex+count when moving downwards
             # it expects destinationChild to be expectedNewIndex when moving upwards
@@ -213,8 +212,6 @@ class ClusterSelector(QListView):
                     raise ValueError("Row indices from MIME stream are not contiguous and in ascending order.")
                 count += 1
 
-            print(f"sourceRow = {sourceRow}, row = {row}, parent {parent.row() if parent.isValid() else 'invalid'}")
-
             # Insert at specific node
             if row != -1:
                 destinationRow = row # - 1 if row > sourceRow else row # Moving down is different from moving up
@@ -299,7 +296,7 @@ class ClusterSelector(QListView):
             return
 
         # Add data
-        nClusters = spikeLabels.max(initial=-1) + 1 + 10
+        nClusters = spikeLabels.max(initial=-1) + 1
         model.insertRows(0, nClusters)
         if clusterNames is None:
             clusterNames = self.randomNames(seed=seed, count=nClusters)

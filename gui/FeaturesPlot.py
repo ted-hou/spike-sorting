@@ -93,20 +93,36 @@ class FeaturesPlot(QWidget):
         if waveforms:
             self.waveformPlot.autoRange()
 
-    def reorder(self, from_index: int, to_index: int):
+    def reorder(self, order: typing.Union[list[int], tuple[int]] = None, moveSource: int = None, moveCount: int = None, moveDestination: int = None):
         """
-        Reassign colors after moving a cluster index. Only RGB values are re-acquired from gui.default_colors().
+        Reassign colors after moving cluster indices. Only RGB values are overwritten by gui.default_colors().
         QBrush/QPen settings will be preserved. This is done by updating the stored QPen/QBrush objects.
         Requires the stored QGraphicsItem to have custom data attached via QGraphicsItem.setData() to work.
 
-        :param from_index: old index of the cluster to be moved
-        :param to_index: new index after a cluster was moved
         :return: None
         """
-        # Reorder plot items so they appear in the new order
+        # Reorder self.itemsPerCluster according to new cluster order
+        # Mode 1 : use new order (e.g. [1,2,3,0,4,5])
         ipc = self.itemsPerCluster
-        ipc.insert(to_index, ipc.pop(from_index))
+        ipc_new = ipc.copy()
+        if order is not None and order:
+            for i in range(len(ipc)):
+                ipc_new[i] = ipc[order[i]]
+        else:
+            ipc_moved = ipc[moveSource:moveSource + moveCount]
+            # Moving up
+            if moveSource > moveDestination:
+                del ipc_new[moveSource:moveSource + moveCount]
+                ipc_new[moveDestination:moveDestination] = ipc_moved
+            elif moveSource < moveDestination:
+                ipc_new[moveDestination:moveDestination] = ipc_moved
+                del ipc_new[moveSource:moveSource + moveCount]
+            else:
+                return
+        self.itemsPerCluster = ipc_new
 
+
+        # Reorder plot items so they appear in the new order
         # Re-assign colors
         for i in range(len(self.itemsPerCluster)):
             for item in self.itemsPerCluster[i]:

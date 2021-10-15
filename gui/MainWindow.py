@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
         from spikesorting import move_clusters
         i = self.channelSelector.currentIndex
         move_clusters(self.spikeLabels[i], source, count, destination, in_place=True)
-        self.featuresPlot.reorder(source, count, destination)
+        self.featuresPlot.reorder(moveSource=source, moveCount=count, moveDestination=destination)
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData
