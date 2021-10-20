@@ -1,6 +1,4 @@
 import typing
-import warnings
-
 import numpy as np
 from scipy.cluster.vq import kmeans2
 from spikefeatures import SpikeFeatures, SpikeFeaturesPCA, SpikeFeaturesHaar, SpikeFeaturesDb4
@@ -115,3 +113,50 @@ def remap_clusters(labels: np.ndarray, old_values: typing.Union[list[int], tuple
         new_labels[old_labels == ov] = nv
 
     return new_labels
+
+
+def split_cluster(data, labels: np.ndarray, indices: typing.Union[int, list[int], tuple[int]], n_clusters=3, method='kmeans', in_place=False) -> np.ndarray:
+    # Sub-cluster on specific clusters
+    if type(indices) is int:
+        is_sub_data = labels == indices
+    else:
+        is_sub_data = np.isin(labels, indices)
+    sub_labels = cluster(data[is_sub_data], n_clusters=n_clusters, method=method)
+
+    # Shift sub-cluster labels so they don't overlap with original labels
+    n_super_clusters = labels.max(initial=-1) + 1
+    # n_sub_clusters = sub_labels.max(initial=-1) + 1
+    sub_labels += n_super_clusters
+
+    # Write to original array, or a new copy if in_place=False
+    out_labels = labels if in_place else labels.copy()
+    out_labels[is_sub_data] = sub_labels
+    return out_labels
+
+
+def merge_clusters(labels: np.ndarray, indices: typing.Union[list[int], tuple[int]], consolidate=True, in_place=False) -> np.ndarray:
+    """
+    Merge 2 or more clusters. Optionally consolidate cluster indices using consolidate_clusters()
+    :param labels: 1d NumPy array containing cluster indices
+    :param indices:
+    :param consolidate:
+    :param in_place: True to modify the original array. False to return a new array.
+    :return:
+    """
+    out_labels = labels if in_place else labels.copy()
+    out_labels[np.isin(labels, indices)] = np.min(indices)
+    if consolidate:
+        consolidate_clusters(out_labels, in_place=True)
+    return out_labels
+
+
+def consolidate_clusters(labels: np.ndarray, in_place=False) -> np.ndarray:
+    """Shift cluster indices so that they range from [0, n_clusters)"""
+    out_labels = labels if in_place else labels.copy()
+    indices = np.sort(np.unique(labels))
+
+    for i in range(1, len(indices)):
+        if indices[i] > indices[i - 1] + 1:
+            out_labels[labels == indices[i]] = indices[i - 1] + 1
+            indices[i] = indices[i - 1] + 1
+    return out_labels
