@@ -1,7 +1,7 @@
 import typing
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt, QSize, pyqtSignal
-from PyQt5.QtGui import QResizeEvent
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtGui import QResizeEvent
 from spikedata import SpikeData
 
 COMBOBOX_WIDTH = 38
@@ -35,7 +35,7 @@ class ChannelSelector(QWidget):
     # Signals
     currentIndexChanged = pyqtSignal(int)
 
-    def __init__(self, parent: QWidget = None, flags: typing.Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags()):
+    def __init__(self, parent=None, flags=None):
         super().__init__(parent, flags)
         self.createWidgets()
         self.setSizeLimits(comboBoxWidth=COMBOBOX_WIDTH, buttonWidth=BUTTON_WIDTH, itemHeight=ITEM_HEIGHT, spacing=SPACING, margin=MARGIN)
@@ -112,9 +112,9 @@ class ChannelSelector(QWidget):
 
         layout.addStretch(1)
         layout.addWidget(leftButton, 1)
-        layout.addWidget(channelLabel, 2, Qt.AlignRight)
+        layout.addWidget(channelLabel, 2, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(channelComboBox, 2)
-        layout.addWidget(electrodeLabel, 2, Qt.AlignRight)
+        layout.addWidget(electrodeLabel, 2, Qt.AlignmentFlag.AlignRight)
         layout.addWidget(electrodeComboBox, 2)
         layout.addWidget(rightButton, 1)
         layout.addStretch(1)

@@ -1,10 +1,10 @@
 import typing
 import numpy as np
 import pyqtgraph as pg
-# from PyQt5 import QtCore, QtWidgets
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import QColor, QBrush, QPen
+# from PyQt6 import QtCore, QtWidgets
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import *
+from PyQt6.QtGui import QColor, QBrush, QPen
 import gui
 from gui.pyqtgraph_utils import MultiCurvePlotItem
 from spikedata import SpikeData
@@ -88,19 +88,19 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
         prct_lo = np.percentile(waveforms, prct, axis=0)
 
         color = pg.mkColor(color)
-        pen = pg.mkPen(color, width=2, style=Qt.SolidLine)
-        mean_curve = pg.PlotCurveItem(x=timestamps, y=mean, pen=pg.mkPen(color, width=2, style=Qt.SolidLine))
+        pen = pg.mkPen(color, width=2, style=Qt.PenStyle.SolidLine)
+        mean_curve = pg.PlotCurveItem(x=timestamps, y=mean, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.SolidLine))
         QGraphicsItem.setData(mean_curve, DATA_PEN, pen)
 
         color.setAlphaF(0.5)
         pen.setWidth(1)
-        pen.setStyle(Qt.DotLine)
+        pen.setStyle(Qt.PenStyle.DotLine)
         sd_pos_curve = pg.PlotCurveItem(x=timestamps, y=mean + sd, pen=pen)
         sd_neg_curve = pg.PlotCurveItem(x=timestamps, y=mean - sd, pen=pen)
         QGraphicsItem.setData(sd_pos_curve, DATA_PEN, pen)
         QGraphicsItem.setData(sd_neg_curve, DATA_PEN, pen)
 
-        pen.setStyle(Qt.DashLine)
+        pen.setStyle(Qt.PenStyle.DashLine)
         prct_hi_curve = pg.PlotCurveItem(x=timestamps, y=prct_hi, pen=pen)
         prct_lo_curve = pg.PlotCurveItem(x=timestamps, y=prct_lo, pen=pen)
         QGraphicsItem.setData(prct_hi_curve, DATA_PEN, pen)

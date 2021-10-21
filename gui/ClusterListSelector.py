@@ -1,8 +1,8 @@
 import typing
 import numpy as np
-from PyQt5.QtCore import Qt, QModelIndex, QAbstractListModel, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal
-from PyQt5.QtGui import QColor, QFont, QBrush
-from PyQt5.QtWidgets import *
+from PyQt6.QtCore import Qt, QModelIndex, QAbstractListModel, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QBrush
+from PyQt6.QtWidgets import *
 import gui
 
 
@@ -119,24 +119,24 @@ class ClusterListSelector(QListView):
         def flags(self, index: QModelIndex):
             base_flags = QAbstractListModel.flags(self, index)
             if not index.isValid():
-                return base_flags | Qt.ItemIsDropEnabled
+                return base_flags | Qt.ItemFlag.ItemIsDropEnabled
             else:
-                return base_flags | Qt.ItemIsUserCheckable | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+                return base_flags | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
 
         # Modify setData: when checking/unchecking an item, it is added/removed from a set.
-        def setData(self, index: QModelIndex, value, role=Qt.DisplayRole) -> bool:
+        def setData(self, index: QModelIndex, value, role=Qt.ItemDataRole.DisplayRole) -> bool:
             if not index.isValid():
                 return False
 
-            if role == Qt.EditRole or role == Qt.DisplayRole:
+            if role == Qt.ItemDataRole.EditRole or role == Qt.ItemDataRole.DisplayRole:
                 oldValue = self.itemData[index.row()].name
                 self.itemData[index.row()].name = value
                 if oldValue != value:
                     self.dataChanged.emit(index, index, [role])
                 return True
-            elif role == Qt.CheckStateRole:
+            elif role == Qt.ItemDataRole.CheckStateRole:
                 oldValue = self.itemData[index.row()].checked
-                value = value == Qt.Checked
+                value = value == Qt.CheckState.Checked
                 self.setCheckState(index, value)
                 if oldValue != value:
                     self.dataChanged.emit(index, index, [role])
@@ -145,30 +145,30 @@ class ClusterListSelector(QListView):
                 return False
 
         # Modify data to return checked/unchecked state
-        def data(self, index: QModelIndex, role=Qt.DisplayRole):
+        def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
             if not index.isValid():
                 return QVariant()
-            if role == Qt.DisplayRole:
+            if role == Qt.ItemDataRole.DisplayRole:
                 return f"{index.row() + 1} - {self.itemData[index.row()].name}"
-            elif role == Qt.CheckStateRole:
+            elif role == Qt.ItemDataRole.CheckStateRole:
                 if self.getCheckState(index):
-                    return Qt.Checked
+                    return Qt.CheckState.Checked
                 else:
-                    return Qt.Unchecked
-            elif role == Qt.FontRole:
+                    return Qt.CheckState.Unchecked
+            elif role == Qt.ItemDataRole.FontRole:
                 return self.itemStyles[index.row()].font
-            elif role == Qt.BackgroundRole:
+            elif role == Qt.ItemDataRole.BackgroundRole:
                 return self.itemStyles[index.row()].bg
-            elif role == Qt.ForegroundRole:
+            elif role == Qt.ItemDataRole.ForegroundRole:
                 return self.itemStyles[index.row()].fg
             else:
                 return QVariant()
 
         def supportedDragActions(self):
-            return Qt.MoveAction
+            return Qt.DropAction.MoveAction
 
         def supportedDropActions(self):
-            return Qt.MoveAction
+            return Qt.DropAction.MoveAction
 
         def mimeTypes(self):
             return [self._mimeType]
@@ -197,7 +197,7 @@ class ClusterListSelector(QListView):
             called by QAbstractItemView """
             if not self.canDropMimeData(data, action, row, column, parent):
                 return False
-            if action == Qt.IgnoreAction:
+            if action == Qt.DropAction.IgnoreAction:
                 return True
 
             # Decode data to determine source index:
@@ -283,7 +283,7 @@ class ClusterListSelector(QListView):
         super().dataChanged(top, bottom, roles)
 
         # Handle check/uncheck
-        if Qt.CheckStateRole in roles:
+        if Qt.ItemDataRole.CheckStateRole in roles:
             for i in range(top.row(), bottom.row() + 1):
                 self.itemCheckStateChanged.emit(i, self.model().isChecked(i))
 

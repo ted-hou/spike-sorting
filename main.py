@@ -3,6 +3,8 @@ import numpy as np
 from continuousdata import BlackrockContinuousData
 import spikedetect
 from spikesorting import extract_features, cluster
+from PyQt6.QtWidgets import QApplication
+from gui.MainWindow import MainWindow
 
 # Read continuous data
 file = r'\\research.files.med.harvard.edu\neurobio\NEUROBIOLOGY SHARED\Assad Lab\Lingfeng\Data\daisy9\daisy9_20211001\daisy9_20211001.ns5'
@@ -18,14 +20,7 @@ del cont_data
 spike_features = extract_features(spike_data, ndims=5, method='haar')
 spike_labels = cluster(spike_features, n_clusters=3, method='kmeans')
 
-from PyQt5.QtWidgets import QApplication
-from gui.MainWindow import MainWindow
-
 app = QApplication([])
 window = MainWindow(spike_data, spike_features, spike_labels)
 window.show()
 app.exec()
-
-
-from gui.MainWindow import start_app
-# start_app()

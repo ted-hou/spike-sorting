@@ -1,8 +1,8 @@
 import sys
 import typing
 import numpy as np
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import *
+from PyQt6.QtCore import Qt
 from gui.ClusterListSelector import ClusterListSelector
 from gui.ChannelSelector import ChannelSelector
 from gui.FeaturesPlot import FeaturesPlot
@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
 
     channelSelectorMaxWidth = 200
 
-    def __init__(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray], parent: QWidget = None, flags: typing.Union[Qt.WindowFlags, Qt.WindowType] = Qt.WindowFlags()):
+    def __init__(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray], parent: QWidget = None, flags=None):
         self.spikeData = spikeData
         self.spikeFeatures = spikeFeatures
         self.spikeLabels = spikeLabels
@@ -43,9 +43,9 @@ class MainWindow(QMainWindow):
         self.channelSelector = ChannelSelector(dock)
         self.channelSelector.load(spikeData)
         dock.setWidget(self.channelSelector)
-        dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetMovable)
-        self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
         # ClusterSelector
@@ -53,13 +53,13 @@ class MainWindow(QMainWindow):
         self.clusterSelector = ClusterListSelector(dock)
         self.clusterSelector.load(spikeLabels[self.channelSelector.currentChannel])
         dock.setWidget(self.clusterSelector)
-        dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetMovable)
-        self.addDockWidget(Qt.RightDockWidgetArea, dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
         self.setDockOptions(QMainWindow.AllowNestedDocks)
-        self.setTabPosition(Qt.AllDockWidgetAreas, QTabWidget.North)
+        self.setTabPosition(Qt.DockWidgetArea.AllDockWidgetAreas, QTabWidget.North)
 
         # Set up connections
         # Handle channel change

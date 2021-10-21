@@ -1,5 +1,5 @@
 import numpy as np
-from PyQt5.QtWidgets import QGraphicsPathItem
+from PyQt6.QtWidgets import QGraphicsPathItem
 import pyqtgraph as pg
 from pyqtgraph import ViewBox
 import weakref

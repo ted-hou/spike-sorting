@@ -1,6 +1,6 @@
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import *
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import *
 from pyqtgraph import ViewBox
 from gui.pyqtgraph_utils import linkAxes
 from gui.plot import *
@@ -14,7 +14,7 @@ class FeaturesPlot(QWidget):
     yzPlot: pg.PlotItem
     itemsPerCluster: list[list[QGraphicsItem]]
 
-    def __init__(self, parent=None, flags=Qt.WindowFlags()):
+    def __init__(self, parent=None, flags=None):
         super().__init__(parent, flags)
         self.createPlots()
 

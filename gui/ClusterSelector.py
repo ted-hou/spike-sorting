@@ -1,10 +1,9 @@
 from __future__ import annotations  # allows TreeItem type hint in its own constructor
 import typing
 import numpy as np
-from PyQt5.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal, \
-    QAbstractItemModel, QObject
-from PyQt5.QtGui import QColor, QFont, QBrush
-from PyQt5.QtWidgets import *
+from PyQt6.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal, QAbstractItemModel, QObject
+from PyQt6.QtGui import QColor, QFont, QBrush
+from PyQt6.QtWidgets import *
 import gui
 
 

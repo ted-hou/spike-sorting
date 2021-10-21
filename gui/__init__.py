@@ -1,4 +1,4 @@
-from PyQt5.QtGui import QColor
+from PyQt6.QtGui import QColor
 
 _default_colors = ('red', 'green', 'darkblue', 'skyblue', 'magenta', 'gold', 'black')
 
