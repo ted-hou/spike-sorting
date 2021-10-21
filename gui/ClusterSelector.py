@@ -8,43 +8,40 @@ import gui
 
 
 # noinspection PyPep8Naming
-class ItemStyle:
+class ClusterTreeItemStyle:
     font: QFont
     fg: typing.Union[QColor, QBrush]
     bg: typing.Union[QColor, QBrush]
-    color: QColor
-    highlighted: bool = False
+    _color: QColor
+    _highlighted: bool = False
 
     def __init__(self, color: typing.Union[QColor, str], highlight=False):
-        self.highlighted = highlight
-        self.setColor(color)
-        self.font = QFont()
-        self.font.setBold(highlight)
-
-    def setColor(self, color: typing.Union[QColor, str]):
-        if type(color) is str:
-            color = QColor(color)
-        if not isinstance(color, QColor):
-            raise TypeError(f"color is type {type(color)}, expected QColor or str")
-        if self.highlighted:
-            self.bg = QColor('white')
-            self.fg = color
-            # self.bg = color
-            # self.fg = QColor('white')
-        else:
-            self.bg = QColor('white')
-            self.fg = color
         self.color = color
+        self.font = QFont()
+        self.highlighted = highlight
 
-    def setHighlight(self, highlight=True):
-        if highlight:
-            self.font.setBold(True)
-            # self.bg = self.color
-            # self.fg = QColor('white')
-        else:
-            self.font.setBold(False)
-            # self.bg = QColor('white')
-            # self.fg = self.color
+    @property
+    def color(self) -> QColor:
+        return self._color
+
+    @color.setter
+    def color(self, value: typing.Union[QColor, str]):
+        if type(value) is str:
+            value = QColor(value)
+        if not isinstance(value, QColor):
+            raise TypeError(f"color is type {type(value)}, expected QColor or str")
+        self.bg = QColor('white')
+        self.fg = value
+        self.color = value
+
+    @property
+    def highlighted(self):
+        return self._highlighted
+
+    @highlighted.setter
+    def highlighted(self, value: bool):
+        self._highlighted = value
+        self.font.setBold(value)
 
 
 # noinspection PyPep8Naming
@@ -56,12 +53,12 @@ class ClusterTreeItem:
     _children: list[ClusterTreeItem]
     _parent: ClusterTreeItem
     _name: str = ''
-    _checked: bool = True
+    _checkState: Qt.CheckState = Qt.CheckState.Checked
 
     def __init__(self, name: str, parent: ClusterTreeItem = None):
         self.parent = parent
         self._name = name
-        self._checked = True
+        self._checkState = Qt.CheckState.Checked
         self._children = []
 
     def __del__(self):
@@ -76,12 +73,12 @@ class ClusterTreeItem:
         self._name = value
 
     @property
-    def checked(self):
-        return self._checked
+    def checkState(self):
+        return self._checkState
 
-    @checked.setter
-    def checked(self, value: bool):
-        self._checked = value
+    @checkState.setter
+    def checkState(self, value: Qt.CheckState):
+        self._checkState = value
 
     @property
     def parent(self):
@@ -165,7 +162,18 @@ class ClusterTreeModel(QAbstractItemModel):
         return 1
 
     def data(self, index: QModelIndex, role=None):
-        
+        if index is None or not index.isValid():
+            return QVariant()
+
+        item: ClusterTreeItem = index.internalPointer()
+        if role == Qt.ItemDataRole.DisplayRole:
+            return f"{item.row() + 1} - {item.name}"
+        elif role == Qt.ItemDataRole.CheckStateRole:
+            return item.checkState
+        elif role == Qt.ItemDataRole.FontRole:
+            return
+        else:
+            return QVariant()
 
 # noinspection PyPep8Naming
 class ClusterTreeSelector(QTreeView):
