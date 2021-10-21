@@ -5,9 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="396023c4-8bd6-4669-8ecc-672e83e9dbb8" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/spike-sorting.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/spike-sorting.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/ChannelSelector.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/ChannelSelector.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/ClusterListSelector.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/ClusterListSelector.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/FeaturesPlot.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/FeaturesPlot.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/gui/MainWindow.py" beforeDir="false" afterPath="$PROJECT_DIR$/gui/MainWindow.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -98,7 +100,7 @@
       <workItem from="1634851430343" duration="946000" />
       <workItem from="1634852398244" duration="1162000" />
       <workItem from="1634853585451" duration="298000" />
-      <workItem from="1634853978652" duration="406000" />
+      <workItem from="1634853978652" duration="905000" />
     </task>
     <servers />
   </component>

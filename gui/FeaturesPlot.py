@@ -14,8 +14,8 @@ class FeaturesPlot(QWidget):
     yzPlot: pg.PlotItem
     itemsPerCluster: list[list[QGraphicsItem]]
 
-    def __init__(self, parent=None, flags=None):
-        super().__init__(parent, flags)
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.createPlots()
 
     def createPlots(self):

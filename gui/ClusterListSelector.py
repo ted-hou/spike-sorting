@@ -176,7 +176,7 @@ class ClusterListSelector(QListView):
         def mimeData(self, indexes):
             mime_data = QMimeData()
             encoded_data = QByteArray()
-            stream = QDataStream(encoded_data, QIODevice.WriteOnly)
+            stream = QDataStream(encoded_data, QIODevice.OpenModeFlag.WriteOnly)
 
             rows = [index.row() for index in indexes if index.isValid()]
             rows.sort() # Sort row indices in ascending order
@@ -265,13 +265,13 @@ class ClusterListSelector(QListView):
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
-        self.setDragDropMode(QAbstractItemView.InternalMove)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         model = self.ClusterSelectorModel(self)
         self.setModel(model)
         self.setDropIndicatorShown(True)
         self.setSelectionRectVisible(True)
-        self.setSelectionMode(QAbstractItemView.ContiguousSelection)
-        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ContiguousSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
         # Pass rowsMoved event
         model.rowsMoved.connect(self.onRowsMoved)

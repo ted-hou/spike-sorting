@@ -24,12 +24,12 @@ class MainWindow(QMainWindow):
 
     channelSelectorMaxWidth = 200
 
-    def __init__(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray], parent: QWidget = None, flags=None):
+    def __init__(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray], parent: QWidget = None):
         self.spikeData = spikeData
         self.spikeFeatures = spikeFeatures
         self.spikeLabels = spikeLabels
 
-        super().__init__(parent, flags)
+        super().__init__(parent)
 
         self.setWindowTitle("Spike Sorting")
         self.toolbar = self.createToolbar()
@@ -44,7 +44,7 @@ class MainWindow(QMainWindow):
         self.channelSelector.load(spikeData)
         dock.setWidget(self.channelSelector)
         dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
-        dock.setFeatures(QDockWidget.DockWidgetMovable)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
@@ -54,12 +54,12 @@ class MainWindow(QMainWindow):
         self.clusterSelector.load(spikeLabels[self.channelSelector.currentChannel])
         dock.setWidget(self.clusterSelector)
         dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
-        dock.setFeatures(QDockWidget.DockWidgetMovable)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         self.viewMenu.addAction(dock.toggleViewAction())
 
-        self.setDockOptions(QMainWindow.AllowNestedDocks)
-        self.setTabPosition(Qt.DockWidgetArea.AllDockWidgetAreas, QTabWidget.North)
+        self.setDockOptions(QMainWindow.DockOption.AllowNestedDocks)
+        self.setTabPosition(Qt.DockWidgetArea.AllDockWidgetAreas, QTabWidget.TabPosition.North)
 
         # Set up connections
         # Handle channel change
@@ -90,9 +90,9 @@ class MainWindow(QMainWindow):
     def createToolbar(self):
         toolbar = self.addToolBar("File")
         style = self.style()
-        toolbar.addAction(style.standardIcon(QStyle.SP_FileIcon), "New")
-        toolbar.addAction(style.standardIcon(QStyle.SP_DialogOpenButton), "Open")
-        toolbar.addAction(style.standardIcon(QStyle.SP_DialogSaveButton), "Save")
+        toolbar.addAction(style.standardIcon(QStyle.StandardPixmap.SP_FileIcon), "New")
+        toolbar.addAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton), "Open")
+        toolbar.addAction(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton), "Save")
         return toolbar
 
 

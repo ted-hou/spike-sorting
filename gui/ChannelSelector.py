@@ -35,8 +35,8 @@ class ChannelSelector(QWidget):
     # Signals
     currentIndexChanged = pyqtSignal(int)
 
-    def __init__(self, parent=None, flags=None):
-        super().__init__(parent, flags)
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.createWidgets()
         self.setSizeLimits(comboBoxWidth=COMBOBOX_WIDTH, buttonWidth=BUTTON_WIDTH, itemHeight=ITEM_HEIGHT, spacing=SPACING, margin=MARGIN)
         self.createConnections()
