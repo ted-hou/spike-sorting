@@ -1,7 +1,8 @@
+#PS E:\PycharmProjects\spike-sorting> Set-ExecutionPolicy Unrestricted -Scope Process
 #python~=3.9.0
 setuptools>=52.0.0
 cython>=0.29.24
 numpy>=1.20.3
-scipy>=1.6.2
+scipy>=1.7.1
 PyQt6>=6.2.0
 pyqtgraph>=0.12.3
