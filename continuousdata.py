@@ -1,9 +1,12 @@
 import os
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Sequence
+
+import matplotlib.pyplot
 import numpy as np
+import numpy.random
 
 
 class ContinuousData:
@@ -15,6 +18,14 @@ class ContinuousData:
         high_freq_cutoff: float  # High frequency cutoff (Hz) used in bandpass filter: Inf = None
         low_freq_cutoff: float  # Low frequency cutoff (Hz) used in bandpass filter: 0 = None
         conversion_factor: float  # Multiply by this value to convert data from int16 to float64
+
+        def __init__(self, electrode_id: int, label: str = '', analog_units: str = 'μV', high_freq_cutoff: float = None, low_freq_cutoff: float = None, conversion_factor: float = 1.0):
+            self.electrode_id = electrode_id
+            self.label = label
+            self.analog_units = analog_units
+            self.high_freq_cutoff = high_freq_cutoff
+            self.low_freq_cutoff = low_freq_cutoff
+            self.conversion_factor = conversion_factor
 
     file: str  # path to continuous data file
     data: np.ndarray  # int16 representation of continuous data with shape (num_samples, num_channels). Needs to be multiplied with conversion_factor for actual voltage
@@ -28,6 +39,70 @@ class ContinuousData:
 
     def filter(self, low_freq=250.0, high_freq=5000.0) -> np.ndarray:
         pass
+
+    @staticmethod
+    def generate(n_channels=32, min_spike_rate=10.0, max_spike_rate=60.0, sample_rate=30000, n_samples=300000, seed: int = None):
+        """Generate simulated data."""
+        cd = ContinuousData()
+        cd.file = None
+        cd.time_origin = datetime.now(timezone.utc)
+        cd.channels = list(range(n_channels))
+        cd.electrodes = list(range(n_channels))
+        cd.sample_rate = sample_rate
+        cd.n_samples = n_samples
+        cd.n_channels = n_channels
+        cd.channels_info = [ContinuousData.ChannelInfo(i + 1, label=f"chan{i + 1}", conversion_factor=0.25) for i in range(n_channels)]
+
+        # Generate spike train
+        # Random firing rates for each channel
+        rng = numpy.random.default_rng(seed)
+        fr = (max_spike_rate - min_spike_rate) * rng.random(size=n_channels) + min_spike_rate
+
+        # Firing probability for each discrete time point is (fr * dt), equivalent to (ft / sample_rate)
+        spike_train = rng.random(size=(n_samples, n_channels)) * sample_rate < fr
+
+        # Generate a standard waveform for each channel
+        def generate_waveform(phase_durations=(.0002, .0003, .0005), depolarization_voltage=-200.0, hyperpolarization_voltage=50.0):
+            # Generate discrete times and corresponding voltages (td, vd)
+            dur = list(phase_durations)
+            dur.insert(0, 0)
+            dur.insert(1, dur[1] * 0.05)
+            dur[2] *= 0.95
+            dur.insert(4, dur[4] * 0.5)
+            dur[5] *= 0.5
+            td = np.asarray(dur).cumsum()
+            vd = np.asarray([0, 0, depolarization_voltage, hyperpolarization_voltage, hyperpolarization_voltage*0.367879, 0])
+            # Spline interpolation of td, vd -> ts, vs
+            from scipy.interpolate import splrep, splev
+            spl = splrep(td, vd, per=True)
+            ts = np.arange(0, td[-1], 1/sample_rate)
+            vs = splev(ts, spl)
+            return vs
+
+        phase_durations_mean = np.asarray((.0001, .00015, .00025))
+        phase_durations_sd_scale = np.asarray(0.1)
+        phase_durations = rng.normal(
+            loc=phase_durations_mean,
+            scale=phase_durations_sd_scale * phase_durations_mean,
+            size=(n_channels, 3)
+        )
+
+        # Convolve spike-train with waveform shape
+        data_f = np.empty((n_samples, n_channels), dtype=np.float64)
+        for i_channel in range(n_channels):
+            waveform = generate_waveform(phase_durations=phase_durations[i_channel, :],
+                                         depolarization_voltage=rng.normal(loc=-300, scale=50),
+                                         hyperpolarization_voltage=rng.normal(loc=100, scale=50))
+            data_f[:, i_channel] = np.convolve(spike_train[:, i_channel], waveform, 'same')
+
+        # Add noise and convert to int
+        white_noise = 100.0 * rng.standard_normal(size=data_f.shape, dtype=np.float64)
+        from scipy import signal
+        sos = signal.butter(2, 7500, btype='lowpass', output='sos', fs=sample_rate)
+        data_f += signal.sosfilt(sos, white_noise)
+        cd.data = np.rint(data_f * 4).astype(np.int16)
+
+        return cd
 
 
 class BlackrockContinuousData(ContinuousData):
@@ -68,7 +143,7 @@ class BlackrockContinuousData(ContinuousData):
                                                                    signed=False) > 0 else 'None'
 
     @dataclass
-    class __NSxHeader:
+    class _NSxHeader:
         file_type_id: str  # Always set to “BRSMPGRP” for “Neural Continuous Data”. Note: In prior versions of the
         # file, this field was set to “NEURALSG” or “NEURALCD”.
         file_spec: float  # The major and minor revision numbers of the file specification used to create the file
@@ -108,9 +183,9 @@ class BlackrockContinuousData(ContinuousData):
             ss = int.from_bytes(data[12:14], byteorder='little', signed=False)
             us = int.from_bytes(data[14:16], byteorder='little', signed=False) * 1000
 
-            return datetime(yy, mo, dd, hh, mm, ss, us)
+            return datetime(yy, mo, dd, hh, mm, ss, us, tzinfo=timezone.utc)
 
-    __header: __NSxHeader
+    _header: _NSxHeader
 
     def read(self, file: str, electrodes: Sequence[int] = None, channels: Sequence[int] = None,
              n_samples: int = 0xFFFFFFFF):
@@ -127,26 +202,26 @@ class BlackrockContinuousData(ContinuousData):
             n_samples = 0xFFFFFFFF
 
         self.file = file
-        self.__header, self.time_origin, self.sample_rate = self.__read_header(file)
-        self.data, self.channels, self.electrodes, self.channels_info = self.__read_data(file, electrodes, channels, n_samples)
+        self._header, self.time_origin, self.sample_rate = self._read_header(file)
+        self.data, self.channels, self.electrodes, self.channels_info = self._read_data(file, electrodes, channels, n_samples)
         self.n_samples = self.data.shape[0]
         self.n_channels = self.data.shape[1]
 
-    def __read_header(self, file):
-        header = self.__NSxHeader(file)
+    def _read_header(self, file):
+        header = self._NSxHeader(file)
         return header, header.time_origin, header.sample_rate
 
-    def __read_data(self, file, electrodes: Sequence[int] = None, channels: Sequence[int] = None,
-                    n_samples: int = 0xFFFFFFFF) -> (np.ndarray, [int], [int]):
-        packet_start = self.__header.bytes_in_headers
+    def _read_data(self, file, electrodes: Sequence[int] = None, channels: Sequence[int] = None,
+                   n_samples: int = 0xFFFFFFFF) -> (np.ndarray, [int], [int]):
+        packet_start = self._header.bytes_in_headers
         with open(file, mode='rb') as file:
             # Read data packet __header
             file.seek(packet_start, os.SEEK_SET)
             packet_header = file.read(1)
             assert packet_header == b'\x01'  # Blackrock data packets always start with 0x01
-            if self.__header.file_type_id == 'NEURALCD':
+            if self._header.file_type_id == 'NEURALCD':
                 packet_start_timestamp = int.from_bytes(file.read(4), byteorder='little', signed=False)
-            elif self.__header.file_type_id == 'BRSMPGRP':
+            elif self._header.file_type_id == 'BRSMPGRP':
                 packet_start_timestamp = int.from_bytes(file.read(8), byteorder='little', signed=False)
             assert packet_start_timestamp == 0
 
@@ -154,13 +229,13 @@ class BlackrockContinuousData(ContinuousData):
             packet_n_samples = int.from_bytes(file.read(4), byteorder='little', signed=False)
             n_samples = min(n_samples, packet_n_samples)
 
-            channels, electrodes = self.__validate_sel_channels(channels, electrodes)
+            channels, electrodes = self._validate_sel_channels(channels, electrodes)
 
             n_channels = len(channels)
-            trimmed_electrodes_info = [self.__header.channels_info[c] for c in channels]
+            trimmed_electrodes_info = [self._header.channels_info[c] for c in channels]
 
             # Simple case, read all channels
-            if n_channels == self.__header.n_channels:
+            if n_channels == self._header.n_channels:
                 data = np.fromfile(file, dtype=np.int16, count=n_channels * n_samples)
                 data = np.reshape(data, (n_samples, n_channels), order='C')
             else:
@@ -177,17 +252,17 @@ class BlackrockContinuousData(ContinuousData):
                                                           dtype=np.int16)  # Should default to little-endian order
                         cur_chn = channels[i] + 1
                         i += 1
-                    file.seek(2*(self.__header.n_channels - cur_chn), os.SEEK_CUR)
+                    file.seek(2 * (self._header.n_channels - cur_chn), os.SEEK_CUR)
                     cur_chn = 0
 
         return data, channels, electrodes, trimmed_electrodes_info
 
-    def __validate_sel_channels(self, channels, electrodes):
+    def _validate_sel_channels(self, channels, electrodes):
         # Determine which channels to read
         # Select via electrode ID
         if electrodes is not None and electrodes:
             sel_electrodes = [*electrodes].copy()
-            electrodes_in_file = [e.electrode_id for e in self.__header.channels_info]
+            electrodes_in_file = [e.electrode_id for e in self._header.channels_info]
             electrodes = [e for e in electrodes if e in electrodes_in_file]
             channels = [electrodes_in_file.index(e) for e in electrodes]
             if not channels:
@@ -195,13 +270,13 @@ class BlackrockContinuousData(ContinuousData):
         # Select via channel index (0-based)
         elif channels is not None and channels:
             sel_channels = [*channels].copy()
-            channels = [c for c in channels if c < self.__header.n_channels]
-            electrodes = [self.__header.channels_info[c].electrode_id for c in channels]
+            channels = [c for c in channels if c < self._header.n_channels]
+            electrodes = [self._header.channels_info[c].electrode_id for c in channels]
             if not channels:
                 raise ValueError(f'None of the specified channels are in file {[*sel_channels]}.')
         # Read all channels (no selection criteria provided)
         else:
-            channels = [*range(self.__header.n_channels)]
-            electrodes = [self.__header.channels_info[c].electrode_id for c in channels]
+            channels = [*range(self._header.n_channels)]
+            electrodes = [self._header.channels_info[c].electrode_id for c in channels]
 
         return channels, electrodes
