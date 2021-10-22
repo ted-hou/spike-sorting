@@ -47,7 +47,7 @@ class ContinuousData:
         cd.file = None
         cd.time_origin = datetime.now(timezone.utc)
         cd.channels = list(range(n_channels))
-        cd.electrodes = list(range(n_channels))
+        cd.electrodes = list(range(1, n_channels + 1))
         cd.sample_rate = sample_rate
         cd.n_samples = n_samples
         cd.n_channels = n_channels

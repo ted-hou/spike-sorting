@@ -90,6 +90,7 @@ class ClusterTreeItem:
 
     def appendChild(self, item: ClusterTreeItem):
         self._children.append(item)
+        item.parent = self
 
     def childAt(self, row: int) -> ClusterTreeItem | None:
         if row < 0 or row >= len(self._children):
@@ -112,7 +113,15 @@ class ClusterTreeModel(QAbstractItemModel):
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
-        self.rootItem = ClusterTreeItem('Cluster')
+        self.rootItem = ClusterTreeItem('Root')
+        a = ClusterTreeItem('A')
+        b = ClusterTreeItem('A')
+        c = ClusterTreeItem('A')
+        self.rootItem.appendChild(a)
+        self.rootItem.appendChild(b)
+        self.rootItem.appendChild(c)
+        a.appendChild(ClusterTreeItem('A1'))
+        a.appendChild(ClusterTreeItem('A2'))
 
     def __del__(self):
         del self.rootItem
@@ -175,6 +184,28 @@ class ClusterTreeModel(QAbstractItemModel):
         else:
             return QVariant()
 
+    def flags(self, index: QModelIndex) -> Qt.ItemFlag:
+        baseFlags = QAbstractItemModel.flags(self, index)
+        if not index.isValid():
+            return baseFlags | Qt.ItemFlag.ItemIsDropEnabled
+        else:
+            return baseFlags | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+
+    def headerData(self, section: int, orientation: Qt.Orientation, role: int = ...):
+        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
+            return self.rootItem.name
+        return QVariant()
+
+
 # noinspection PyPep8Naming
-class ClusterTreeSelector(QTreeView):
-    pass
+class ClusterSelector(QTreeView):
+    def __init__(self, parent: QWidget = None):
+        super().__init__(parent=parent)
+        self.setModel(ClusterTreeModel(self))
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDropIndicatorShown(True)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ContiguousSelection)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+
+    def load(self, *args, **kwargs):
+        pass

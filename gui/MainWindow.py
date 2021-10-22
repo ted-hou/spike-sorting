@@ -3,7 +3,7 @@ import typing
 import numpy as np
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import Qt
-from gui.ClusterListSelector import ClusterListSelector
+from gui.ClusterSelector import ClusterSelector
 from gui.ChannelSelector import ChannelSelector
 from gui.FeaturesPlot import FeaturesPlot
 from spikedata import SpikeData
@@ -20,7 +20,7 @@ class MainWindow(QMainWindow):
     viewMenu: QMenu
     featuresPlot: FeaturesPlot
     channelSelector: ChannelSelector
-    clusterSelector: ClusterListSelector
+    clusterSelector: ClusterSelector
 
     channelSelectorMaxWidth = 200
 
@@ -50,7 +50,7 @@ class MainWindow(QMainWindow):
 
         # ClusterSelector
         dock = QDockWidget("Clusters", self)
-        self.clusterSelector = ClusterListSelector(dock)
+        self.clusterSelector = ClusterSelector(dock)
         self.clusterSelector.load(spikeLabels[self.channelSelector.currentChannel])
         dock.setWidget(self.clusterSelector)
         dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
@@ -67,10 +67,10 @@ class MainWindow(QMainWindow):
         self.channelSelector.currentIndexChanged.emit(self.channelSelector.currentIndex)
 
         # Handle cluster visibility change
-        self.clusterSelector.itemCheckStateChanged.connect(self.featuresPlot.setClusterVisible)
+        # self.clusterSelector.itemCheckStateChanged.connect(self.featuresPlot.setClusterVisible)
 
         # Handle cluster index reordering
-        self.clusterSelector.itemsMoved.connect(self.onClusterMoved)
+        # self.clusterSelector.itemsMoved.connect(self.onClusterMoved)
 
     def onChannelChanged(self, i: int):
         self.clusterSelector.load(self.spikeLabels[i], seed=self.spikeData[i].electrode + 12345)
