@@ -78,7 +78,26 @@ class ClusterTreeItem:
 
     @checkState.setter
     def checkState(self, value: Qt.CheckState):
+        if isinstance(value, int):
+            value = Qt.CheckState(value)
         self._checkState = value
+        # Notify parents, recursively, until we hit root
+        parent = self.parent
+        while parent is not None:
+            if value is not Qt.CheckState.PartiallyChecked and all([child.checkState == value for child in parent._children]):
+                parent._checkState = value
+            else:
+                parent._checkState = Qt.CheckState.PartiallyChecked
+            parent = parent.parent
+        # Notify children
+        for child in self._children:
+            child.onParentCheckStateChanged(value)
+
+    def onParentCheckStateChanged(self, value: Qt.CheckState):
+        if value is Qt.CheckState.Checked or value is Qt.CheckState.Unchecked:
+            self._checkState = value
+            for child in self._children:
+                child.onParentCheckStateChanged(value)
 
     @property
     def parent(self):
@@ -120,8 +139,13 @@ class ClusterTreeModel(QAbstractItemModel):
         self.rootItem.appendChild(a)
         self.rootItem.appendChild(b)
         self.rootItem.appendChild(c)
-        a.appendChild(ClusterTreeItem('A1'))
-        a.appendChild(ClusterTreeItem('A2'))
+        a1 = ClusterTreeItem('A1')
+        b1 = ClusterTreeItem('B1')
+        a.appendChild(a1)
+        a.appendChild(b1)
+        a1.appendChild(ClusterTreeItem('A1-1'))
+        a1.appendChild(ClusterTreeItem('A1-2'))
+        a1.appendChild(ClusterTreeItem('A1-3'))
 
     def __del__(self):
         del self.rootItem
@@ -184,6 +208,36 @@ class ClusterTreeModel(QAbstractItemModel):
         else:
             return QVariant()
 
+    def setData(self, index: QModelIndex, value: typing.Any, role: int = None) -> bool:
+        if index is None or not index.isValid():
+            return False
+
+        item: ClusterTreeItem = index.internalPointer()
+        if role == Qt.ItemDataRole.DisplayRole:
+            item.name = value
+            # Item
+            self.dataChanged.emit(index, index, [role])
+            return True
+        elif role == Qt.ItemDataRole.CheckStateRole:
+            item.checkState = value
+            # Update all parents:
+            parentIndex = index
+            while parentIndex.isValid():
+                self.dataChanged.emit(parentIndex, parentIndex, [role])
+                parentIndex = index.parent()
+            # Update all children:
+            self.broadcastDataChangeToChildren(index)
+
+            return True
+        else:
+            return False
+
+    def broadcastDataChangeToChildren(self, index: QModelIndex, roles):
+        childCount = index.internalPointer().childCount()
+        self.dataChanged.emit(index.siblingAtRow(0), index.siblingAtRow(childCount), roles)
+        # for i in range(childCount):
+        #     self.broadcastDataChangeToChildren(index.siblingAtRow(i), roles)
+
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         baseFlags = QAbstractItemModel.flags(self, index)
         if not index.isValid():
@@ -207,5 +261,5 @@ class ClusterSelector(QTreeView):
         self.setSelectionMode(QAbstractItemView.SelectionMode.ContiguousSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
 
-    def load(self, *args, **kwargs):
+    def load(self, labels, seed=None):
         pass
