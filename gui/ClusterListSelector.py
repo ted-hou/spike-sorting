@@ -260,6 +260,17 @@ class ClusterListSelector(QListView):
             else:
                 return False
 
+
+
+
+
+
+
+
+
+
+
+
     itemCheckStateChanged = pyqtSignal(int, bool)
     itemsMoved = pyqtSignal(int, int, int)  # source, count, destination
 
