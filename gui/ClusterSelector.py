@@ -1,10 +1,14 @@
 from __future__ import annotations  # allows TreeItem type hint in its own constructor
 import typing
+import weakref
+
 import numpy as np
-from PyQt6.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal, QAbstractItemModel, QObject
+from PyQt6.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal, \
+    QAbstractItemModel, QObject, QItemSelection
 from PyQt6.QtGui import QColor, QFont, QBrush
 from PyQt6.QtWidgets import *
 import gui
+from weakref import ref
 
 
 # noinspection PyPep8Naming
@@ -54,12 +58,14 @@ class ClusterTreeItem:
     _parent: ClusterTreeItem
     _name: str = ''
     _checkState: Qt.CheckState = Qt.CheckState.Checked
+    _labels: weakref
 
-    def __init__(self, name: str, parent: ClusterTreeItem = None):
+    def __init__(self, name: str, labels: np.ndarray = None, parent: ClusterTreeItem = None):
         self.parent = parent
         self._name = name
         self._checkState = Qt.CheckState.Checked
         self._children = []
+        self._labels = weakref.ref(labels) if labels is not None else None
 
     # Ported from C++, might not be necessary in python because GC
     def __del__(self):
@@ -74,6 +80,20 @@ class ClusterTreeItem:
         self._name = value
 
     @property
+    def labels(self):
+        if self._labels is None:
+            return None
+        else:
+            return self._labels()
+
+    @labels.setter
+    def labels(self, value: np.ndarray):
+        if value is None:
+            self._labels = None
+        else:
+            self._labels = weakref.ref(value)
+
+    @property
     def checkState(self):
         return self._checkState
 
@@ -85,7 +105,8 @@ class ClusterTreeItem:
         # Notify parents, recursively, until we hit root
         parent = self.parent
         while parent is not None:
-            if value is not Qt.CheckState.PartiallyChecked and all([child.checkState == value for child in parent._children]):
+            if value is not Qt.CheckState.PartiallyChecked and all(
+                    [child.checkState == value for child in parent._children]):
                 parent._checkState = value
             else:
                 parent._checkState = Qt.CheckState.PartiallyChecked
@@ -113,14 +134,16 @@ class ClusterTreeItem:
         item.parent = self
 
     def insertChild(self, row: int, item: ClusterTreeItem):
-        if row < 0 or row > len(self._children):
+        if row < 0:
             raise ValueError(f"cannot insert, desired row index {row} is out of range [0, {len(self._children)}].")
+        row = min(len(self._children), row)
         self._children.insert(row, item)
         item.parent = self
 
     def insertChildren(self, row: int, items: typing.Iterable[ClusterTreeItem]):
-        if row < 0 or row > len(self._children):
+        if row < 0:
             raise ValueError(f"cannot insert, desired row index {row} is out of range [0, {len(self._children)}].")
+        row = min(len(self._children), row)
         self._children[row:row] = items
         for item in items:
             item.parent = self
@@ -130,20 +153,22 @@ class ClusterTreeItem:
         del self._children[row]
 
     def removeChildren(self, row: int, count: int):
-        for c in self._children[row:row+count]:
+        for c in self._children[row:row + count]:
             c.parent = None
-        del self._children[row:row+count]
+        del self._children[row:row + count]
 
     def popChild(self, row: int) -> ClusterTreeItem:
+        if row < 0 or row >= self.childCount():
+            raise ValueError(f"popped {row} out of range of [0, {self.childCount()})")
         child = self._children.pop(row)
         child.parent = None
         return child
 
     def popChildren(self, row: int, count) -> list[ClusterTreeItem]:
-        items = self._children[row:row+count]
+        items = self._children[row:row + count]
         for item in items:
             item.parent = None
-        del self._children[row:row+count]
+        del self._children[row:row + count]
         return items
 
     def child(self, row: int) -> ClusterTreeItem | None:
@@ -168,11 +193,16 @@ class ClusterTreeModel(QAbstractItemModel):
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
-        self.rootItem = ClusterTreeItem('Root')
-        self.rootItem.appendChild(ClusterTreeItem("A"))
-        self.rootItem.appendChild(ClusterTreeItem("B"))
+        self.rootItem = ClusterTreeItem('Root', np.asarray([0]*10 + [1] * 10, dtype=np.int8))
+        self.rootItem.appendChild(ClusterTreeItem("A", np.asarray([0]*5 + [1]*5, dtype=np.int8)))
+        self.rootItem.appendChild(ClusterTreeItem("B", np.asarray([0]*3 + [1]*3 + [2]*4, dtype=np.int8)))
+        self.rootItem.child(0).appendChild(ClusterTreeItem("A-0"))
         self.rootItem.child(0).appendChild(ClusterTreeItem("A-1"))
-        self.rootItem.child(0).appendChild(ClusterTreeItem("A-2"))
+        self.rootItem.child(1).appendChild(ClusterTreeItem("B-0"))
+        self.rootItem.child(1).appendChild(ClusterTreeItem("B-1"))
+        self.rootItem.child(1).appendChild(ClusterTreeItem("B-2", np.asarray([0]*2 + [1]*2, dtype=np.int8)))
+        self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-0"))
+        self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-1"))
 
     def __del__(self):
         del self.rootItem
@@ -235,6 +265,8 @@ class ClusterTreeModel(QAbstractItemModel):
             return f"{item.row() + 1} - {item.name}"
         elif role == Qt.ItemDataRole.CheckStateRole:
             return item.checkState
+        elif role == Qt.ItemDataRole.UserRole:
+            return item.labels
         elif role == Qt.ItemDataRole.FontRole:
             return
         else:
@@ -258,9 +290,11 @@ class ClusterTreeModel(QAbstractItemModel):
                 self.dataChanged.emit(parentIndex, parentIndex, [role])
                 parentIndex = parentIndex.parent()
             # Update immediate children:
-            self.broadcastDataChangeToChildren(index, [role])
             self.dataChanged.emit(index.siblingAtRow(0), index.siblingAtRow(item.childCount()), [role])
             return True
+        elif role == Qt.ItemDataRole.UserRole:
+            item.labels = value
+            self.dataChanged.emit(index, index, [role])
         else:
             return False
 
@@ -274,11 +308,11 @@ class ClusterTreeModel(QAbstractItemModel):
     # Inserting/removing rows
     def insertRows(self, row: int, count: int, parent: QModelIndex = None) -> bool:
         # No parent specified, insert to root
-        if parent is None or not parent.isValid():
-            parent = self.rootItem
+        if parent is None:
+            parent = QModelIndex()
 
         self.beginInsertRows(parent, row, row + count - 1)
-        parentItem: ClusterTreeItem = parent.internalPointer()
+        parentItem: ClusterTreeItem = parent.internalPointer() if parent.isValid() else self.rootItem
         for i in range(row, row + count):
             parentItem.insertChild(i, ClusterTreeItem('__uninitialized__'))
         self.endInsertRows()
@@ -286,16 +320,17 @@ class ClusterTreeModel(QAbstractItemModel):
 
     def removeRows(self, row: int, count: int, parent: QModelIndex = None) -> bool:
         # No parent specified, remove from root
-        if parent is None or not parent.isValid():
-            parent = self.rootItem
+        if parent is None:
+            parent = QModelIndex()
 
         self.beginRemoveRows(parent, row, row + count - 1)
-        parentItem: ClusterTreeItem = parent.internalPointer()
+        parentItem: ClusterTreeItem = parent.internalPointer() if parent.isValid() else self.rootItem
         parentItem.removeChildren(row, count)
         self.endRemoveRows()
         return True
 
-    def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex, destinationChild: int) -> bool:
+    def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex,
+                 destinationChild: int) -> bool:
         # When moving within the same parent, moveRows() is weird:
         # it expects destinationChild to be expectedNewIndex+count when moving downwards
         # it expects destinationChild to be expectedNewIndex when moving upwards
@@ -331,7 +366,6 @@ class ClusterTreeModel(QAbstractItemModel):
         return [self._mimeType]
 
     def mimeData(self, indexes: typing.Iterable[QModelIndex]) -> QMimeData:
-        mimeData = QMimeData()
         encodedData = QByteArray()
         stream = QDataStream(encodedData, QIODevice.OpenModeFlag.WriteOnly)
 
@@ -342,19 +376,86 @@ class ClusterTreeModel(QAbstractItemModel):
             while parentIndex.isValid():
                 path.insert(0, parentIndex.row())
                 parentIndex = parentIndex.parent()
+            stream.writeUInt8(len(path))
+            for i in path:
+                stream.writeUInt8(i)
 
+        mimeData = QMimeData()
+        mimeData.setData(self._mimeType, encodedData)
+        return mimeData
 
-        # rows = [index.row() for index in indexes if index.isValid()]
-        # rows.sort()  # Sort row indices in ascending order
-
-
-    def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: QModelIndex) -> bool:
+    def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int,
+                        parent: QModelIndex) -> bool:
+        """Verify tree structure - cannot move an item with its ancestor or offspring. Siblings, cousins, uncles, etc are okay."""
         if not data.hasFormat(self._mimeType):
             return False
+
+        paths = self._parseMimeData(data)
+        for path in paths:
+            path = path.copy()
+            while len(path) > 0:
+                del path[len(path) - 1]
+                if path in paths:
+                    return False
         return True
 
     def dropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent: QModelIndex) -> bool:
-        pass
+        if action == Qt.DropAction.IgnoreAction:
+            return True
+
+        # Decode & sort data
+        paths = self._parseMimeData(data)
+        maxPathLength = max([len(p) for p in paths])
+
+        def pathOrder(p: list[int]) -> int:
+            value = 0
+            for j in range(len(p)):
+                value += 2 ** (8 * (maxPathLength - j - 1)) * p[j]
+            return value
+
+        paths.sort(key=pathOrder, reverse=True)
+
+        # Remove and store all items in path
+        items = []
+        for path in paths:
+            index = self._indexFromPath(path)
+            parentIndex = self._indexFromPath(path[0:len(path) - 1])
+            parentItem = parentIndex.internalPointer() if parentIndex.isValid() else self.rootItem
+            self.beginRemoveRows(parentIndex, index.row(), index.row())
+            items.insert(0, parentItem.popChild(index.row()))
+            self.endRemoveRows()
+
+        # Insert removed items into new position
+        parentItem = parent.internalPointer() if parent.isValid() else self.rootItem
+        if row == -1:
+            row = parentItem.childCount()
+        self.beginInsertRows(parent, row, row)
+        parentItem.insertChildren(row, items)
+        self.endInsertRows()
+
+        newIndices = [self.index(item.row(), 0, parent) for item in items]
+        for i in range(len(newIndices)):
+            self.setData(newIndices[i], items[i].checkState, Qt.ItemDataRole.CheckStateRole)
+
+        return True
+
+    def _indexFromPath(self, path: list[int]) -> QModelIndex:
+        if len(path) == 0:
+            return QModelIndex()
+        index = QModelIndex()
+        for p in path:
+            index = self.index(p, 0, index)
+        return index
+
+    def _parseMimeData(self, data: QMimeData) -> list[list[int]]:
+        encodedData = data.data(self._mimeType)
+        stream = QDataStream(encodedData, QIODevice.OpenModeFlag.ReadOnly)
+        paths = []
+        while not stream.atEnd():
+            depth = stream.readUInt8()
+            path = [stream.readUInt8() for _ in range(depth)]
+            paths.append(path)
+        return paths
 
 
 # noinspection PyPep8Naming
@@ -363,10 +464,15 @@ class ClusterSelector(QTreeView):
         super().__init__(parent=parent)
         self.setModel(ClusterTreeModel(self))
         self.setHeaderHidden(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setDropIndicatorShown(True)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.ContiguousSelection)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+
+    #
+    # def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
+    #     super().selectionChanged(selected, deselected)
+    #     # print([i.row() for i in selected.indexes()], [i.row() for i in deselected.indexes()])
 
     def load(self, labels, seed=None):
         pass
