@@ -1,14 +1,11 @@
 from __future__ import annotations  # allows TreeItem type hint in its own constructor
 import typing
-import weakref
-
 import numpy as np
 from PyQt6.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal, \
     QAbstractItemModel, QObject, QItemSelection
 from PyQt6.QtGui import QColor, QFont, QBrush
 from PyQt6.QtWidgets import *
 import gui
-from weakref import ref
 
 
 # noinspection PyPep8Naming
@@ -58,18 +55,22 @@ class ClusterTreeItem:
     _parent: ClusterTreeItem
     _name: str = ''
     _checkState: Qt.CheckState = Qt.CheckState.Checked
-    _labels: weakref
+    _indices: np.ndarray | None
+    _dirty: bool
 
-    def __init__(self, name: str, labels: np.ndarray = None, parent: ClusterTreeItem = None):
-        self.parent = parent
+    def __init__(self, name: str, indices: np.ndarray = None):
         self._name = name
         self._checkState = Qt.CheckState.Checked
         self._children = []
-        self._labels = weakref.ref(labels) if labels is not None else None
+        self._indices = indices
+        self._dirty = True
 
     # Ported from C++, might not be necessary in python because GC
     def __del__(self):
         self._children.clear()
+
+    def isValid(self):
+        return self.childCount() > 0 or self._indices is not None
 
     @property
     def name(self):
@@ -80,18 +81,44 @@ class ClusterTreeItem:
         self._name = value
 
     @property
-    def labels(self):
-        if self._labels is None:
-            return None
+    def indices(self):
+        """Absolute waveform indices associated with this cluster. If this is a parent item, returns combined indices
+        of all (deep) child items. """
+        if self.childCount() == 0:
+            return self._indices
         else:
-            return self._labels()
+            # Recombine indices from children if marked dirty
+            if self.dirty:
+                size = self.size()
+                self._indices = np.empty((size,), dtype=np.uint32)
+                i = 0
+                for child in self._children:
+                    childIndices = child.indices
+                    self._indices[i:i+childIndices.size] = childIndices
+                    i += childIndices.size
+            return self._indices
 
-    @labels.setter
-    def labels(self, value: np.ndarray):
-        if value is None:
-            self._labels = None
+    @indices.setter
+    def indices(self, value: np.ndarray):
+        self._indices = value
+
+    @property
+    def dirty(self) -> bool:
+        """True if indices needs updating. This is flagged when a child item is added or removed"""
+        return self._dirty or any([child.dirty for child in self._children])
+
+    @dirty.setter
+    def dirty(self, value: bool):
+        self._dirty = value
+
+    def size(self) -> int:
+        if self.childCount() == 0:
+            return self._indices.size
         else:
-            self._labels = weakref.ref(value)
+            count = 0
+            for child in self._children:
+                count += child.size()
+            return count
 
     @property
     def checkState(self):
@@ -129,48 +156,6 @@ class ClusterTreeItem:
     def parent(self, value):
         self._parent = value
 
-    def appendChild(self, item: ClusterTreeItem):
-        self._children.append(item)
-        item.parent = self
-
-    def insertChild(self, row: int, item: ClusterTreeItem):
-        if row < 0:
-            raise ValueError(f"cannot insert, desired row index {row} is out of range [0, {len(self._children)}].")
-        row = min(len(self._children), row)
-        self._children.insert(row, item)
-        item.parent = self
-
-    def insertChildren(self, row: int, items: typing.Iterable[ClusterTreeItem]):
-        if row < 0:
-            raise ValueError(f"cannot insert, desired row index {row} is out of range [0, {len(self._children)}].")
-        row = min(len(self._children), row)
-        self._children[row:row] = items
-        for item in items:
-            item.parent = self
-
-    def removeChild(self, row: int):
-        self._children[row].parent = None
-        del self._children[row]
-
-    def removeChildren(self, row: int, count: int):
-        for c in self._children[row:row + count]:
-            c.parent = None
-        del self._children[row:row + count]
-
-    def popChild(self, row: int) -> ClusterTreeItem:
-        if row < 0 or row >= self.childCount():
-            raise ValueError(f"popped {row} out of range of [0, {self.childCount()})")
-        child = self._children.pop(row)
-        child.parent = None
-        return child
-
-    def popChildren(self, row: int, count) -> list[ClusterTreeItem]:
-        items = self._children[row:row + count]
-        for item in items:
-            item.parent = None
-        del self._children[row:row + count]
-        return items
-
     def child(self, row: int) -> ClusterTreeItem | None:
         if row < 0 or row >= len(self._children):
             return None
@@ -185,6 +170,57 @@ class ClusterTreeItem:
             return self._parent._children.index(self)
         return 0
 
+    def insertChildren(self, row: int, items: typing.Iterable[ClusterTreeItem]):
+        if row < 0:
+            raise ValueError(f"cannot insert, desired row index {row} is out of range [0, {len(self._children)}].")
+        row = min(len(self._children), row)
+        self._children[row:row] = items
+        for item in items:
+            item.parent = self
+        self.indices = None
+        self.dirty = True
+
+    def removeChildren(self, row: int, count: int):
+        for c in self._children[row:row + count]:
+            c.parent = None
+        del self._children[row:row + count]
+        self.indices = None
+        self.dirty = True
+
+    def popChildren(self, row: int, count) -> list[ClusterTreeItem]:
+        items = self._children[row:row + count]
+        self.removeChildren(row, count)
+        self.indices = None
+        return items
+
+    def insertChild(self, row: int, item: ClusterTreeItem):
+        self.insertChildren(row, [item])
+
+    def appendChild(self, item: ClusterTreeItem):
+        self.insertChild(self.childCount(), item)
+        item.parent = self
+        self.dirty = True
+
+    def removeChild(self, row: int):
+        self.removeChildren(row, 1)
+
+    def popChild(self, row: int) -> ClusterTreeItem:
+        return self.popChildren(row, 1)[0]
+
+    def copy(self) -> ClusterTreeItem:
+        """Return a childless shallow copy of the item"""
+        obj = ClusterTreeItem(self._name, self._indices)
+        obj._checkState = self._checkState
+        return obj
+
+    def removeInvalidChildren(self):
+        i = 0
+        while self.childCount() > i:
+            self.child(i).removeInvalidChildren()
+            if self.child(i).isValid():
+                i += 1
+            else:
+                self.removeChild(i)
 
 # noinspection PyPep8Naming
 class ClusterTreeModel(QAbstractItemModel):
@@ -193,16 +229,16 @@ class ClusterTreeModel(QAbstractItemModel):
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
-        self.rootItem = ClusterTreeItem('Root', np.asarray([0]*10 + [1] * 10, dtype=np.int8))
-        self.rootItem.appendChild(ClusterTreeItem("A", np.asarray([0]*5 + [1]*5, dtype=np.int8)))
-        self.rootItem.appendChild(ClusterTreeItem("B", np.asarray([0]*3 + [1]*3 + [2]*4, dtype=np.int8)))
-        self.rootItem.child(0).appendChild(ClusterTreeItem("A-0"))
-        self.rootItem.child(0).appendChild(ClusterTreeItem("A-1"))
-        self.rootItem.child(1).appendChild(ClusterTreeItem("B-0"))
-        self.rootItem.child(1).appendChild(ClusterTreeItem("B-1"))
-        self.rootItem.child(1).appendChild(ClusterTreeItem("B-2", np.asarray([0]*2 + [1]*2, dtype=np.int8)))
-        self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-0"))
-        self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-1"))
+        self.rootItem = ClusterTreeItem('Root')
+        self.rootItem.appendChild(ClusterTreeItem("A"))
+        self.rootItem.appendChild(ClusterTreeItem("B"))
+        self.rootItem.child(0).appendChild(ClusterTreeItem("A-0", np.asarray([0, 2, 4, 6, 8], dtype=np.uint32)))
+        self.rootItem.child(0).appendChild(ClusterTreeItem("A-1", np.asarray([1, 3, 5, 7, 9], dtype=np.uint32)))
+        self.rootItem.child(1).appendChild(ClusterTreeItem("B-0", np.asarray([10, 12, 14, 16, 18], dtype=np.uint32)))
+        self.rootItem.child(1).appendChild(ClusterTreeItem("B-1", np.asarray([11, 13, 15, 17, 19], dtype=np.uint32)))
+        self.rootItem.child(1).appendChild(ClusterTreeItem("B-2"))
+        self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-0", np.asarray([20, 22, 24, 26, 28], dtype=np.uint32)))
+        self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-1", np.asarray([21, 23, 25, 27, 29], dtype=np.uint32)))
 
     def __del__(self):
         del self.rootItem
@@ -266,7 +302,7 @@ class ClusterTreeModel(QAbstractItemModel):
         elif role == Qt.ItemDataRole.CheckStateRole:
             return item.checkState
         elif role == Qt.ItemDataRole.UserRole:
-            return item.labels
+            return item.indices
         elif role == Qt.ItemDataRole.FontRole:
             return
         else:
@@ -293,7 +329,7 @@ class ClusterTreeModel(QAbstractItemModel):
             self.dataChanged.emit(index.siblingAtRow(0), index.siblingAtRow(item.childCount()), [role])
             return True
         elif role == Qt.ItemDataRole.UserRole:
-            item.labels = value
+            item.indices = value
             self.dataChanged.emit(index, index, [role])
         else:
             return False
@@ -305,55 +341,55 @@ class ClusterTreeModel(QAbstractItemModel):
         else:
             return baseFlags | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
 
-    # Inserting/removing rows
-    def insertRows(self, row: int, count: int, parent: QModelIndex = None) -> bool:
-        # No parent specified, insert to root
-        if parent is None:
-            parent = QModelIndex()
-
-        self.beginInsertRows(parent, row, row + count - 1)
-        parentItem: ClusterTreeItem = parent.internalPointer() if parent.isValid() else self.rootItem
-        for i in range(row, row + count):
-            parentItem.insertChild(i, ClusterTreeItem('__uninitialized__'))
-        self.endInsertRows()
-        return True
-
-    def removeRows(self, row: int, count: int, parent: QModelIndex = None) -> bool:
-        # No parent specified, remove from root
-        if parent is None:
-            parent = QModelIndex()
-
-        self.beginRemoveRows(parent, row, row + count - 1)
-        parentItem: ClusterTreeItem = parent.internalPointer() if parent.isValid() else self.rootItem
-        parentItem.removeChildren(row, count)
-        self.endRemoveRows()
-        return True
-
-    def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex,
-                 destinationChild: int) -> bool:
-        # When moving within the same parent, moveRows() is weird:
-        # it expects destinationChild to be expectedNewIndex+count when moving downwards
-        # it expects destinationChild to be expectedNewIndex when moving upwards
-
-        # Note that if sourceParent and destinationParent are the same, you must ensure that the destinationChild is not
-        # within the range of sourceFirst and sourceLast + 1. You must also ensure that you do not attempt to move a row
-        # to one of its own children or ancestors. This method returns false if either condition is true, in which case
-        # you should abort your move operation.
-        if not self.beginMoveRows(sourceParent, sourceRow, sourceRow + count - 1, destinationParent, destinationChild):
-            return False
-
-        # When moving downwards within same parent, modify destination child
-        if destinationParent is sourceParent and destinationChild > sourceRow:
-            destinationChild -= count
-
-        sourceParentItem: ClusterTreeItem = sourceParent.internalPointer()
-        destinationParentItem: ClusterTreeItem = destinationParent.internalPointer()
-
-        items = sourceParentItem.popChildren(sourceRow, count)
-        destinationParentItem.insertChildren(destinationChild, items)
-
-        self.endMoveRows()
-        return True
+    # # Inserting/removing rows
+    # def insertRows(self, row: int, count: int, parent: QModelIndex = None) -> bool:
+    #     # No parent specified, insert to root
+    #     if parent is None:
+    #         parent = QModelIndex()
+    #
+    #     self.beginInsertRows(parent, row, row + count - 1)
+    #     parentItem: ClusterTreeItem = parent.internalPointer() if parent.isValid() else self.rootItem
+    #     for i in range(row, row + count):
+    #         parentItem.insertChild(i, ClusterTreeItem('__uninitialized__'))
+    #     self.endInsertRows()
+    #     return True
+    #
+    # def removeRows(self, row: int, count: int, parent: QModelIndex = None) -> bool:
+    #     # No parent specified, remove from root
+    #     if parent is None:
+    #         parent = QModelIndex()
+    #
+    #     self.beginRemoveRows(parent, row, row + count - 1)
+    #     parentItem: ClusterTreeItem = parent.internalPointer() if parent.isValid() else self.rootItem
+    #     parentItem.removeChildren(row, count)
+    #     self.endRemoveRows()
+    #     return True
+    #
+    # def moveRows(self, sourceParent: QModelIndex, sourceRow: int, count: int, destinationParent: QModelIndex,
+    #              destinationChild: int) -> bool:
+    #     # When moving within the same parent, moveRows() is weird:
+    #     # it expects destinationChild to be expectedNewIndex+count when moving downwards
+    #     # it expects destinationChild to be expectedNewIndex when moving upwards
+    #
+    #     # Note that if sourceParent and destinationParent are the same, you must ensure that the destinationChild is not
+    #     # within the range of sourceFirst and sourceLast + 1. You must also ensure that you do not attempt to move a row
+    #     # to one of its own children or ancestors. This method returns false if either condition is true, in which case
+    #     # you should abort your move operation.
+    #     if not self.beginMoveRows(sourceParent, sourceRow, sourceRow + count - 1, destinationParent, destinationChild):
+    #         return False
+    #
+    #     # When moving downwards within same parent, modify destination child
+    #     if destinationParent is sourceParent and destinationChild > sourceRow:
+    #         destinationChild -= count
+    #
+    #     sourceParentItem: ClusterTreeItem = sourceParent.internalPointer()
+    #     destinationParentItem: ClusterTreeItem = destinationParent.internalPointer()
+    #
+    #     items = sourceParentItem.popChildren(sourceRow, count)
+    #     destinationParentItem.insertChildren(destinationChild, items)
+    #
+    #     self.endMoveRows()
+    #     return True
 
     # Drag and drop
     def supportedDragActions(self):
@@ -419,20 +455,28 @@ class ClusterTreeModel(QAbstractItemModel):
         items = []
         for path in paths:
             index = self._indexFromPath(path)
+            row = index.row()
             parentIndex = self._indexFromPath(path[0:len(path) - 1])
             parentItem = parentIndex.internalPointer() if parentIndex.isValid() else self.rootItem
-            self.beginRemoveRows(parentIndex, index.row(), index.row())
-            items.insert(0, parentItem.popChild(index.row()))
+            self.beginRemoveRows(parentIndex, row, row)
+            items.insert(0, parentItem.popChild(row))
             self.endRemoveRows()
 
         # Insert removed items into new position
         parentItem = parent.internalPointer() if parent.isValid() else self.rootItem
         if row == -1:
             row = parentItem.childCount()
-        self.beginInsertRows(parent, row, row)
+
+        # If parentItem has no children, it will be copied into a child item
+        if parentItem.childCount() == 0:
+            items.insert(0, parentItem.copy())
+        self.beginInsertRows(parent, row, row + len(items) - 1)
         parentItem.insertChildren(row, items)
         self.endInsertRows()
 
+        self.rootItem.removeInvalidChildren()
+
+        # Refresh CheckState (for visual update only)
         newIndices = [self.index(item.row(), 0, parent) for item in items]
         for i in range(len(newIndices)):
             self.setData(newIndices[i], items[i].checkState, Qt.ItemDataRole.CheckStateRole)
