@@ -97,7 +97,7 @@ class ClusterTreeItem:
                 i = 0
                 for child in self._children:
                     childIndices = child.indices
-                    self._cachedIndices[i:i+childIndices.size] = childIndices
+                    self._cachedIndices[i:i + childIndices.size] = childIndices
                     i += childIndices.size
                 self.dirty = False
             return self._cachedIndices
@@ -236,22 +236,28 @@ class ClusterTreeModel(QAbstractItemModel):
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.rootItem = ClusterTreeItem('Root')
-        # self.rootItem.appendChild(ClusterTreeItem("A"))
-        # self.rootItem.appendChild(ClusterTreeItem("B"))
-        # self.rootItem.child(0).appendChild(ClusterTreeItem("A-0", np.asarray([0, 2, 4, 6, 8], dtype=np.uint32)))
-        # self.rootItem.child(0).appendChild(ClusterTreeItem("A-1", np.asarray([1, 3, 5, 7, 9], dtype=np.uint32)))
-        # self.rootItem.child(1).appendChild(ClusterTreeItem("B-0", np.asarray([10, 12, 14, 16, 18], dtype=np.uint32)))
-        # self.rootItem.child(1).appendChild(ClusterTreeItem("B-1", np.asarray([11, 13, 15, 17, 19], dtype=np.uint32)))
-        # self.rootItem.child(1).appendChild(ClusterTreeItem("B-2"))
-        # self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-0", np.asarray([20, 22, 24, 26, 28], dtype=np.uint32)))
-        # self.rootItem.child(1).child(2).appendChild(ClusterTreeItem("B-2-1", np.asarray([21, 23, 25, 27, 29], dtype=np.uint32)))
-        self.rootItem.appendChild(ClusterTreeItem("A", np.arange(0, 5, dtype=np.uint32)))
-        self.rootItem.appendChild(ClusterTreeItem("B", np.arange(5, 10, dtype=np.uint32)))
-        self.rootItem.appendChild(ClusterTreeItem("C", np.arange(10, 15, dtype=np.uint32)))
-        self.rootItem.appendChild(ClusterTreeItem("D", np.arange(15, 20, dtype=np.uint32)))
 
     def __del__(self):
         del self.rootItem
+
+    def loadFromIndices(self, indices: list):
+        self.beginResetModel()
+        del self.rootItem
+        self.rootItem = self.itemFromIndices('Root', indices)
+        self.endResetModel()
+
+    def itemFromIndices(self, name: str, indices: list) -> ClusterTreeItem:
+        if len(indices) == 1 and isinstance(indices[0], list):
+            return ClusterTreeItem(name, indices[0])
+
+        item = ClusterTreeItem(name)
+        for i in range(len(indices)):
+            if isinstance(indices[i], np.ndarray):
+                childItem = ClusterTreeItem(_randomNames()[0], indices[i])
+            else:
+                childItem = self.itemFromIndices(_randomNames()[0], indices[i])
+            item.appendChild(childItem)
+        return item
 
     def index(self, row: int, column: int, parent: QModelIndex = None) -> QModelIndex:
         if not self.hasIndex(row, column, parent):
@@ -522,5 +528,157 @@ class ClusterSelector(QTreeView):
     #     super().selectionChanged(selected, deselected)
     #     # print([i.row() for i in selected.indexes()], [i.row() for i in deselected.indexes()])
 
-    def load(self, labels, seed=None):
-        pass
+    def load(self, labels):
+        model: ClusterTreeModel = self.model()
+
+        indicesList = labelsToIndices(labels)
+        model.loadFromIndices(indicesList)
+
+
+# noinspection PyPep8Naming
+def labelsToIndices(labels: np.ndarray) -> list[np.ndarray]:
+    indices = []
+    for i in np.unique(labels):
+        indices.append(np.where(labels == i)[0])
+    return indices
+
+
+# noinspection PyPep8Naming
+def indicesToLabels(indices: list[np.ndarray], out_labels: np.ndarray = None) -> np.ndarray:
+    size = sum([np.size(i) for i in indices])
+    if out_labels is None:
+        out_labels = np.empty((size,), np.uint32)
+    elif out_labels.shape != (size,):
+        raise ValueError(f"out_labels {out_labels.shape} does not have desired shape ({size},)")
+
+    for i in range(len(indices)):
+        out_labels[indices[i]] = i
+
+    return out_labels
+
+
+# noinspection PyPep8Naming
+def _randomNames(seed: int = None, count: int = 1) -> list[str]:
+    names = (
+        "Aardvark",
+        "Alligator",
+        "Alpaca",
+        "Anaconda",
+        "Antelope",
+        "Ape",
+        "Armadillo",
+        "Baboon",
+        "Badger",
+        "Barracuda",
+        "Bear",
+        "Beaver",
+        "Bird",
+        "Bison",
+        "BlueJay",
+        "Bobcat",
+        "Buffalo",
+        "Butterfly",
+        "Buzzard",
+        "Camel",
+        "Caribou",
+        "Carp",
+        "Cat",
+        "Caterpillar",
+        "Catfish",
+        "Cheetah",
+        "Chicken",
+        "Chimpanzee",
+        "Chipmunk",
+        "Cobra",
+        "Cod",
+        "Condor",
+        "Cougar",
+        "Cow",
+        "Coyote",
+        "Crab",
+        "Crane",
+        "Cricket",
+        "Crocodile",
+        "Crow",
+        "Deer",
+        "Dinosaur",
+        "Dog",
+        "Dolphin",
+        "Donkey",
+        "Dove",
+        "Dragonfly",
+        "Duck",
+        "Eagle",
+        "Eel",
+        "Elephant",
+        "Emu",
+        "Falcon",
+        "Ferret",
+        "Finch",
+        "Flamingo",
+        "Fox",
+        "Frog",
+        "Goat",
+        "Goose",
+        "Gopher",
+        "Gorilla",
+        "Grasshopper",
+        "Hamster",
+        "Hare",
+        "Hawk",
+        "Hippopotamus",
+        "Horse",
+        "Hummingbird",
+        "Husky",
+        "Iguana",
+        "Impala",
+        "Kangaroo",
+        "Ladybug",
+        "Leopard",
+        "Lion",
+        "Lizard",
+        "Llama",
+        "Lobster",
+        "Mongoose",
+        "Monkey",
+        "Moose",
+        "Mule",
+        "Octopus",
+        "Orca",
+        "Ostrich",
+        "Otter",
+        "Owl",
+        "Ox",
+        "Oyster",
+        "Panda",
+        "Panther",
+        "Parrot",
+        "Peacock",
+        "Pelican",
+        "Penguin",
+        "Perch",
+        "Pheasant",
+        "Pig",
+        "Pigeon",
+        "Porcupine",
+        "Quail",
+        "Rabbit",
+        "Raccoon",
+        "Rattlesnake",
+        "Raven",
+        "Rooster",
+        "SeaLion",
+        "Sheep",
+        "Skunk",
+        "Snail",
+        "Snake",
+        "Tiger",
+        "Walrus",
+        "Whale",
+        "Wolf",
+        "Zebra",
+    )
+    import random
+    random.seed(seed)
+    return random.sample(names, count)
+

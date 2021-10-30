@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
         # self.clusterSelector.itemsMoved.connect(self.onClusterMoved)
 
     def onChannelChanged(self, i: int):
-        self.clusterSelector.load(self.spikeLabels[i], seed=self.spikeData[i].electrode + 12345)
+        self.clusterSelector.load(self.spikeLabels[i])
         self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.spikeLabels[i])
 
     def onClusterMoved(self, source: int, count: int, destination: int):
