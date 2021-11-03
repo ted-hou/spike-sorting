@@ -2,7 +2,6 @@ import pyqtgraph as pg
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import *
 from pyqtgraph import ViewBox
-
 from gui.pyqtgraph_utils import linkAxes
 from gui.plot import *
 from gui.ClusterSelector import ClusterItem
@@ -38,7 +37,6 @@ class FeaturesPlot(QWidget):
         self.yzPlot = pw.getPlotItem()
         layout.addWidget(pw, 1, 1)
         # Link x,y,z axes
-        import weakref
         xyView = self.xyPlot.getViewBox()
         xzView = self.xzPlot.getViewBox()
         yzView = self.yzPlot.getViewBox()

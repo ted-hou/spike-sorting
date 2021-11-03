@@ -3,7 +3,7 @@ import typing
 import numpy as np
 from PyQt6.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal, \
     QAbstractItemModel, QObject, QItemSelection
-from PyQt6.QtGui import QColor, QFont, QBrush
+from PyQt6.QtGui import QColor, QFont, QBrush, QContextMenuEvent, QAction
 from PyQt6.QtWidgets import *
 import gui
 from abc import ABC, abstractmethod
@@ -33,11 +33,13 @@ class ClusterItem(ABC):
 
     plotItems = None
 
+    # TODO: Do this through events rather than explicitly calling FeaturesPlot methods
     def onColorChanged(self, color: QColor):
         from gui.FeaturesPlot import FeaturesPlot
         if self.plotItems is not None:
             FeaturesPlot.setClusterColor(self.plotItems, color)
 
+    # TODO: Do this through events rather than explicitly calling FeaturesPlot methods
     def onVisibilityChanged(self, visible: bool):
         from gui.FeaturesPlot import FeaturesPlot
         if self.plotItems is not None:
@@ -59,10 +61,10 @@ class ClusterTreeItem(ClusterItem):
     _dirty: bool
     _colorRange: gui.ColorRange
 
-    def __init__(self, name: str, indices: np.ndarray = None, colorRange: gui.ColorRange = None):
+    def __init__(self, name: str, indices: np.ndarray = None, checkState: Qt.CheckState = Qt.CheckState.Checked, colorRange: gui.ColorRange = None):
         super().__init__()
         self._name = name
-        self._checkState = Qt.CheckState.Checked
+        self._checkState = checkState
         self._children = []
         self._parent = None
         self._indices = indices
@@ -75,8 +77,15 @@ class ClusterTreeItem(ClusterItem):
     def __del__(self):
         self._children.clear()
 
-    def isValid(self):
+    def isValid(self) -> bool:
+        """Either a branch node, or a leaf node with non-empty indices."""
         return self.childCount() > 0 or self._indices is not None
+
+    def isLeaf(self):
+        return not self.isBranch()
+
+    def isBranch(self):
+        return self.childCount() > 0
 
     @property
     def name(self):
@@ -249,8 +258,7 @@ class ClusterTreeItem(ClusterItem):
 
     def copy(self) -> ClusterTreeItem:
         """Return a childless shallow copy of the item"""
-        obj = ClusterTreeItem(self._name, self._indices)
-        obj._checkState = self._checkState
+        obj = ClusterTreeItem(name=self._name, indices=self._indices, checkState=self._checkState, colorRange=self.colorRange)
         obj.plotItems = self.plotItems
         return obj
 
@@ -263,6 +271,47 @@ class ClusterTreeItem(ClusterItem):
             elif child.childCount() > 0:
                 items.extend(child.leaves())
         return items
+
+    @staticmethod
+    def merge(items: list[ClusterTreeItem], name: str):
+        # ensure items in list are direct descendents/ancestors of one another
+        if ClusterTreeItem.containsDirectDescendants(items):
+            raise ValueError(f"Cannot merge all {len(items)} items because list contains direct descendants.")
+
+        # Convert branch nodes to leaf nodes
+        leafItems = items.copy()
+        for item in leafItems:
+            if item.isBranch():
+                leafItems.remove(item)
+                leafItems.extend(item.leaves())
+
+        # Pre-allocate and merge indices
+        size = 0
+        for item in leafItems:
+            size += item.size()
+        mergedIndices = np.empty((size,), dtype=np.uint32)
+        i = 0
+        for item in leafItems:
+            mergedIndices[i:i+item.size()] = item.indices
+            i += item.size()
+
+        # Find the widest ColorRange among all items
+        maxColorRange = max(items, key=lambda it: it.colorRange.width).colorRange
+
+        mergedItem = ClusterTreeItem(name=name, indices=mergedIndices, checkState=Qt.CheckState.Checked, colorRange=maxColorRange)
+        return mergedItem
+
+    @staticmethod
+    def containsDirectDescendants(items: typing.Iterable[ClusterTreeItem]):
+        """Check if any item in the list is a direct descendant of another item in the list."""
+        # We'll do this by checking if an item's parent, or grandparent, or great grandparent... are also in the list.
+        for item in items:
+            parent = item.parent
+            while parent is not None:
+                if parent in items:
+                    return True
+                parent = parent.parent
+        return False
 
 
 # noinspection PyPep8Naming
@@ -430,13 +479,23 @@ class ClusterTreeModel(QAbstractItemModel):
         mimeData.setData(self._mimeType, encodedData)
         return mimeData
 
+    def _parseMimeData(self, data: QMimeData) -> list[list[int]]:
+        encodedData = data.data(self._mimeType)
+        stream = QDataStream(encodedData, QIODevice.OpenModeFlag.ReadOnly)
+        paths = []
+        while not stream.atEnd():
+            depth = stream.readUInt8()
+            path = [stream.readUInt8() for _ in range(depth)]
+            paths.append(path)
+        return paths
+
     def canDropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int,
                         parent: QModelIndex) -> bool:
-        """Verify tree structure - cannot move an item with its ancestor or offspring. Siblings, cousins, uncles, etc are okay."""
+        """Verify tree structure - cannot move an item with its ancestor or descendent. Siblings, cousins, uncles, etc are okay."""
         if not data.hasFormat(self._mimeType):
             return False
 
-        # Cannot move an item along with its ancestor or offspring
+        # Cannot move an item along with its ancestor or descendent
         paths = self._parseMimeData(data)
         for path in paths:
             path = path.copy()
@@ -460,15 +519,7 @@ class ClusterTreeModel(QAbstractItemModel):
 
         # Decode & sort data
         paths = self._parseMimeData(data)
-        maxPathLength = max([len(p) for p in paths])
-
-        def pathOrder(p: list[int]) -> int:
-            value = 0
-            for j in range(len(p)):
-                value += 2 ** (8 * (maxPathLength - j - 1)) * p[j]
-            return value
-
-        paths.sort(key=pathOrder, reverse=True)
+        ClusterTreeModel._sortPaths(paths)
 
         # Remove and store all items in path
         items = []
@@ -504,14 +555,6 @@ class ClusterTreeModel(QAbstractItemModel):
 
         return True
 
-    def _pathToIndex(self, path: list[int]) -> QModelIndex:
-        if len(path) == 0:
-            return QModelIndex()
-        index = QModelIndex()
-        for p in path:
-            index = self.index(p, 0, index)
-        return index
-
     def _removeInvalidChildren(self, parentIndex: QModelIndex = QModelIndex()):
         """Recursively remove invalid ClusterTreeItem's from model."""
         i = 0
@@ -527,6 +570,14 @@ class ClusterTreeModel(QAbstractItemModel):
                 parentItem.removeChild(i)
                 self.endRemoveRows()
 
+    def _pathToIndex(self, path: list[int]) -> QModelIndex:
+        if len(path) == 0:
+            return QModelIndex()
+        index = QModelIndex()
+        for p in path:
+            index = self.index(p, 0, index)
+        return index
+
     @staticmethod
     def _indexToPath(index: QModelIndex) -> list[int]:
         if index is None or not index.isValid():
@@ -537,15 +588,84 @@ class ClusterTreeModel(QAbstractItemModel):
             path.insert(0, index.row())
         return path
 
-    def _parseMimeData(self, data: QMimeData) -> list[list[int]]:
-        encodedData = data.data(self._mimeType)
-        stream = QDataStream(encodedData, QIODevice.OpenModeFlag.ReadOnly)
-        paths = []
-        while not stream.atEnd():
-            depth = stream.readUInt8()
-            path = [stream.readUInt8() for _ in range(depth)]
-            paths.append(path)
-        return paths
+    @staticmethod
+    def _indexDepth(index: QModelIndex) -> int:
+        if index is None or not index.isValid():
+            return 0
+        depth = 0
+        index = index.parent()
+        while index.isValid():
+            depth += 1
+            index = index.parent()
+        return depth
+
+    @staticmethod
+    def _pathOrder(path: typing.Sequence[int], maxDepth: int):
+        value = 0
+        for j in range(len(path)):
+            value += 2 ** (8 * (maxDepth - j - 1)) * path[j]
+        return value
+
+    @staticmethod
+    def _sortPaths(paths: list[list[int]], reverse=True):
+        """Sort paths from bottom of tree to top of tree."""
+
+        maxDepth = max([len(p) for p in paths])
+
+        paths.sort(key=lambda path: ClusterTreeModel._pathOrder(path, maxDepth), reverse=reverse)
+
+    @staticmethod
+    def _sortIndices(indices: list[QModelIndex], reverse=True):
+        maxDepth = max([ClusterTreeModel._indexDepth(index) for index in indices])
+        indices.sort(key=lambda index: ClusterTreeModel._pathOrder(ClusterTreeModel._indexToPath(index), maxDepth), reverse=reverse)
+
+    @staticmethod
+    def canMerge(indices: typing.Iterable[QModelIndex]) -> bool:
+        # Check if list contains direct descendants of any other item in list
+        for index in indices:
+            parentIndex = index.parent()
+            while parentIndex.isValid():
+                if parentIndex in indices:
+                    return False
+                parentIndex = parentIndex.parent()
+        return True
+
+    def merge(self, indices: list[QModelIndex]) -> bool:
+        """Merge indices in list, and replace the shallowest item with the merged item."""
+        if not ClusterTreeModel.canMerge(indices):
+            return False
+
+        # Sort indices from bottom to top
+        indices = indices.copy()
+        ClusterTreeModel._sortIndices(indices, reverse=True)
+
+        # Find shallowest index, this will be replaced by the merged index
+        shallowestIndex = indices[-1]
+        targetParentIndex = shallowestIndex.parent()
+        targetRow = shallowestIndex.row()
+
+        # Generate merged item
+        mergedItems = ClusterTreeItem.merge([index.internalPointer() for index in indices], name=shallowestIndex.internalPointer().name)
+
+        # Remove merged items
+        for index in indices:
+            parentIndex = index.parent()
+            row = index.row()
+            self.beginRemoveRows(parentIndex, row, row)
+            parentItem = parentIndex.internalPointer() if parentIndex.isValid() else self.rootItem
+            parentItem.removeChild(row)
+            self.endRemoveRows()
+
+        # Insert merged item
+        self.beginInsertRows(targetParentIndex, targetRow, targetRow)
+        targetParentItem = targetParentIndex.internalPointer() if targetParentIndex.isValid() else self.rootItem
+        targetParentItem.insertChild(targetRow, mergedItems)
+        self.endInsertRows()
+
+        # Remove invalid children
+        self._removeInvalidChildren()
+
+        return True
 
 
 # noinspection PyPep8Naming
@@ -559,6 +679,7 @@ class ClusterSelector(QTreeView):
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
+        self.mergeAction = self.createContextMenuActions()
     #
     # def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
     #     super().selectionChanged(selected, deselected)
@@ -567,6 +688,20 @@ class ClusterSelector(QTreeView):
     def load(self, labels):
         indicesList = labelsToIndices(labels)
         self.model().loadFromIndices(indicesList)
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = QMenu(self)
+        menu.addAction("Split")
+        menu.addAction(self.mergeAction)
+        menu.exec(event.globalPos())
+
+    def createContextMenuActions(self):
+        mergeAction = QAction("Merge", self)
+        mergeAction.triggered.connect(self.mergeSelected)
+        return mergeAction
+
+    def mergeSelected(self):
+        self.model().merge(self.selectedIndexes())
 
 
 # noinspection PyPep8Naming

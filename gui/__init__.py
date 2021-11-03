@@ -35,6 +35,11 @@ class ColorRange:
     def lRange(self):
         return self._lRange
 
+    @property
+    def width(self) -> float:
+        """Value between 0.0 and 1.0, indicating the range of colors contained. width = hueRange * 0.9 + saturationRange * 0.09 + lightnessRange * 0.01"""
+        return (self.hRange[1] - self.hRange[0]) * 0.9 + (self.sRange[1] - self.sRange[0]) * 0.09 + self.lRange[1] - self.lRange[0] * 0.01
+
     def __init__(self, hRange=(0.0, 1.0), sRange=(.75, 0.25), lRange=(0.5, 0.25)):
         self._hRange = hRange
         self._sRange = sRange
