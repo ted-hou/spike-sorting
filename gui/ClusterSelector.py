@@ -6,47 +6,46 @@ from PyQt6.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QData
 from PyQt6.QtGui import QColor, QFont, QBrush
 from PyQt6.QtWidgets import *
 import gui
+from abc import ABC, abstractmethod
 
 
 # noinspection PyPep8Naming
-class ClusterTreeItemStyle:
-    font: QFont
-    fg: typing.Union[QColor, QBrush]
-    bg: typing.Union[QColor, QBrush]
-    _color: QColor
-    _highlighted: bool = False
-
-    def __init__(self, color: typing.Union[QColor, str], highlight=False):
-        self.color = color
-        self.font = QFont()
-        self.highlighted = highlight
+class ClusterItem(ABC):
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        ...
 
     @property
+    @abstractmethod
+    def indices(self) -> np.ndarray:
+        ...
+
+    @property
+    @abstractmethod
     def color(self) -> QColor:
-        return self._color
-
-    @color.setter
-    def color(self, value: typing.Union[QColor, str]):
-        if type(value) is str:
-            value = QColor(value)
-        if not isinstance(value, QColor):
-            raise TypeError(f"color is type {type(value)}, expected QColor or str")
-        self.bg = QColor('white')
-        self.fg = value
-        self.color = value
+        ...
 
     @property
-    def highlighted(self):
-        return self._highlighted
+    @abstractmethod
+    def visible(self) -> bool:
+        ...
 
-    @highlighted.setter
-    def highlighted(self, value: bool):
-        self._highlighted = value
-        self.font.setBold(value)
+    plotItems = None
+
+    def onColorChanged(self, color: QColor):
+        from gui.FeaturesPlot import FeaturesPlot
+        if self.plotItems is not None:
+            FeaturesPlot.setClusterColor(self.plotItems, color)
+
+    def onVisibilityChanged(self, visible: bool):
+        from gui.FeaturesPlot import FeaturesPlot
+        if self.plotItems is not None:
+            FeaturesPlot.setClusterVisible(self.plotItems, visible)
 
 
 # noinspection PyPep8Naming
-class ClusterTreeItem:
+class ClusterTreeItem(ClusterItem):
     """
     Tree item containing a parent TreeItem reference, a list of children TreeItems, and its own data as a QVariant
     """
@@ -58,8 +57,10 @@ class ClusterTreeItem:
     _indices: np.ndarray | None
     _cachedIndices: np.ndarray | None
     _dirty: bool
+    _colorRange: gui.ColorRange
 
-    def __init__(self, name: str, indices: np.ndarray = None):
+    def __init__(self, name: str, indices: np.ndarray = None, colorRange: gui.ColorRange = None):
+        super().__init__()
         self._name = name
         self._checkState = Qt.CheckState.Checked
         self._children = []
@@ -67,6 +68,8 @@ class ClusterTreeItem:
         self._indices = indices
         self._cachedIndices = None
         self._dirty = True
+        if colorRange is None:
+            self._colorRange = gui.ColorRange()
 
     # Ported from C++, might not be necessary in python because GC
     def __del__(self):
@@ -125,6 +128,10 @@ class ClusterTreeItem:
             return count
 
     @property
+    def visible(self) -> bool:
+        return self.checkState == Qt.CheckState.Checked
+
+    @property
     def checkState(self):
         return self._checkState
 
@@ -146,9 +153,12 @@ class ClusterTreeItem:
         for child in self._children:
             child.onParentCheckStateChanged(value)
 
+        self.onVisibilityChanged(self.visible)
+
     def onParentCheckStateChanged(self, value: Qt.CheckState):
         if value is Qt.CheckState.Checked or value is Qt.CheckState.Unchecked:
             self._checkState = value
+            self.onVisibilityChanged(self.visible)
             for child in self._children:
                 child.onParentCheckStateChanged(value)
 
@@ -159,6 +169,22 @@ class ClusterTreeItem:
     @parent.setter
     def parent(self, value):
         self._parent = value
+
+    @property
+    def color(self):
+        if self.childCount() == 0:
+            return self.colorRange.color
+        else:
+            return QColor(0, 0, 0)
+
+    @property
+    def colorRange(self):
+        return self._colorRange
+
+    @colorRange.setter
+    def colorRange(self, value: gui.ColorRange):
+        self._colorRange = value
+        self.onColorChanged(self.color)
 
     def child(self, row: int) -> ClusterTreeItem | None:
         if row < 0 or row >= len(self._children):
@@ -183,6 +209,7 @@ class ClusterTreeItem:
             item.parent = self
         self.indices = None
         self.dirty = True
+        self.reassignColors()
 
     def removeChildren(self, row: int, count: int):
         for c in self._children[row:row + count]:
@@ -190,11 +217,11 @@ class ClusterTreeItem:
         del self._children[row:row + count]
         self.indices = None
         self.dirty = True
+        # self.reassignColors()
 
     def popChildren(self, row: int, count) -> list[ClusterTreeItem]:
         items = self._children[row:row + count]
         self.removeChildren(row, count)
-        self.indices = None
         return items
 
     def insertChild(self, row: int, item: ClusterTreeItem):
@@ -211,21 +238,31 @@ class ClusterTreeItem:
     def popChild(self, row: int) -> ClusterTreeItem:
         return self.popChildren(row, 1)[0]
 
+    def reassignColors(self):
+        childCount = self.childCount()
+        if childCount > 0:
+            colorRanges = self.colorRange.split(childCount, 'hue')
+            for i in range(childCount):
+                child = self.child(i)
+                child.colorRange = colorRanges[i]
+                child.reassignColors()
+
     def copy(self) -> ClusterTreeItem:
         """Return a childless shallow copy of the item"""
         obj = ClusterTreeItem(self._name, self._indices)
         obj._checkState = self._checkState
+        obj.plotItems = self.plotItems
         return obj
-    #
-    # def removeInvalidChildren(self):
-    #     i = 0
-    #     while self.childCount() > i:
-    #         self.child(i).removeInvalidChildren()
-    #         if self.child(i).isValid():
-    #             i += 1
-    #         else:
-    #             print(self.name, self.childCount(), "removed", i)
-    #             self.removeChild(i)
+
+    def leaves(self) -> list[ClusterTreeItem]:
+        """Return a list containing all leaf nodes in the tree."""
+        items = []
+        for child in self._children:
+            if child.childCount() == 0 and child._indices is not None:
+                items.append(child)
+            elif child.childCount() > 0:
+                items.extend(child.leaves())
+        return items
 
 
 # noinspection PyPep8Naming
@@ -253,9 +290,9 @@ class ClusterTreeModel(QAbstractItemModel):
         item = ClusterTreeItem(name)
         for i in range(len(indices)):
             if isinstance(indices[i], np.ndarray):
-                childItem = ClusterTreeItem(_randomNames()[0], indices[i])
+                childItem = ClusterTreeItem(gui.randomNames()[0], indices[i])
             else:
-                childItem = self.itemFromIndices(_randomNames()[0], indices[i])
+                childItem = self.itemFromIndices(gui.randomNames()[0], indices[i])
             item.appendChild(childItem)
         return item
 
@@ -319,17 +356,15 @@ class ClusterTreeModel(QAbstractItemModel):
             return item.name
             # return f"{item.row() + 1} - {item.name}"
         elif role == Qt.ItemDataRole.ToolTipRole:
-            return f"indices: {item.indices}\n" \
-                   f"_indices: {item._indices}\n" \
-                   f"_cachedIndices: {item._cachedIndices}\n" \
-                   f"childCount() = {item.childCount()}\n" \
-                   f"parent = {item.parent.name}"
+            return f"{item.indices.size}"
         elif role == Qt.ItemDataRole.CheckStateRole:
             return item.checkState
         elif role == Qt.ItemDataRole.UserRole:
             return item.indices
-        elif role == Qt.ItemDataRole.FontRole:
-            return
+        # elif role == Qt.ItemDataRole.FontRole:
+        #     return
+        elif role == Qt.ItemDataRole.ForegroundRole:
+            return item.color
         else:
             return QVariant()
 
@@ -455,6 +490,7 @@ class ClusterTreeModel(QAbstractItemModel):
         if parentItem.childCount() == 0:
             items.insert(0, parentItem.copy())
             parentItem._indices = None
+            parentItem.plotItems = None
         self.beginInsertRows(parent, row, row + len(items) - 1)
         parentItem.insertChildren(row, items)
         self.endInsertRows()
@@ -529,10 +565,8 @@ class ClusterSelector(QTreeView):
     #     # print([i.row() for i in selected.indexes()], [i.row() for i in deselected.indexes()])
 
     def load(self, labels):
-        model: ClusterTreeModel = self.model()
-
         indicesList = labelsToIndices(labels)
-        model.loadFromIndices(indicesList)
+        self.model().loadFromIndices(indicesList)
 
 
 # noinspection PyPep8Naming
@@ -555,130 +589,3 @@ def indicesToLabels(indices: list[np.ndarray], out_labels: np.ndarray = None) ->
         out_labels[indices[i]] = i
 
     return out_labels
-
-
-# noinspection PyPep8Naming
-def _randomNames(seed: int = None, count: int = 1) -> list[str]:
-    names = (
-        "Aardvark",
-        "Alligator",
-        "Alpaca",
-        "Anaconda",
-        "Antelope",
-        "Ape",
-        "Armadillo",
-        "Baboon",
-        "Badger",
-        "Barracuda",
-        "Bear",
-        "Beaver",
-        "Bird",
-        "Bison",
-        "BlueJay",
-        "Bobcat",
-        "Buffalo",
-        "Butterfly",
-        "Buzzard",
-        "Camel",
-        "Caribou",
-        "Carp",
-        "Cat",
-        "Caterpillar",
-        "Catfish",
-        "Cheetah",
-        "Chicken",
-        "Chimpanzee",
-        "Chipmunk",
-        "Cobra",
-        "Cod",
-        "Condor",
-        "Cougar",
-        "Cow",
-        "Coyote",
-        "Crab",
-        "Crane",
-        "Cricket",
-        "Crocodile",
-        "Crow",
-        "Deer",
-        "Dinosaur",
-        "Dog",
-        "Dolphin",
-        "Donkey",
-        "Dove",
-        "Dragonfly",
-        "Duck",
-        "Eagle",
-        "Eel",
-        "Elephant",
-        "Emu",
-        "Falcon",
-        "Ferret",
-        "Finch",
-        "Flamingo",
-        "Fox",
-        "Frog",
-        "Goat",
-        "Goose",
-        "Gopher",
-        "Gorilla",
-        "Grasshopper",
-        "Hamster",
-        "Hare",
-        "Hawk",
-        "Hippopotamus",
-        "Horse",
-        "Hummingbird",
-        "Husky",
-        "Iguana",
-        "Impala",
-        "Kangaroo",
-        "Ladybug",
-        "Leopard",
-        "Lion",
-        "Lizard",
-        "Llama",
-        "Lobster",
-        "Mongoose",
-        "Monkey",
-        "Moose",
-        "Mule",
-        "Octopus",
-        "Orca",
-        "Ostrich",
-        "Otter",
-        "Owl",
-        "Ox",
-        "Oyster",
-        "Panda",
-        "Panther",
-        "Parrot",
-        "Peacock",
-        "Pelican",
-        "Penguin",
-        "Perch",
-        "Pheasant",
-        "Pig",
-        "Pigeon",
-        "Porcupine",
-        "Quail",
-        "Rabbit",
-        "Raccoon",
-        "Rattlesnake",
-        "Raven",
-        "Rooster",
-        "SeaLion",
-        "Sheep",
-        "Skunk",
-        "Snail",
-        "Snake",
-        "Tiger",
-        "Walrus",
-        "Whale",
-        "Wolf",
-        "Zebra",
-    )
-    import random
-    random.seed(seed)
-    return random.sample(names, count)
-

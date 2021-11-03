@@ -22,8 +22,6 @@ class MainWindow(QMainWindow):
     channelSelector: ChannelSelector
     clusterSelector: ClusterSelector
 
-    channelSelectorMaxWidth = 200
-
     def __init__(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray], parent: QWidget = None):
         self.spikeData = spikeData
         self.spikeFeatures = spikeFeatures
@@ -74,13 +72,13 @@ class MainWindow(QMainWindow):
 
     def onChannelChanged(self, i: int):
         self.clusterSelector.load(self.spikeLabels[i])
-        self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.spikeLabels[i])
-
-    def onClusterMoved(self, source: int, count: int, destination: int):
-        from spikesorting import move_clusters
-        i = self.channelSelector.currentIndex
-        move_clusters(self.spikeLabels[i], source, count, destination, in_place=True)
-        self.featuresPlot.reorder(moveSource=source, moveCount=count, moveDestination=destination)
+        self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.clusterSelector.model().rootItem.leaves())
+    #
+    # def onClusterMoved(self, source: int, count: int, destination: int):
+    #     from spikesorting import move_clusters
+    #     i = self.channelSelector.currentIndex
+    #     move_clusters(self.spikeLabels[i], source, count, destination, in_place=True)
+    #     self.featuresPlot.reorder(moveSource=source, moveCount=count, moveDestination=destination)
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData

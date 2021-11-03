@@ -18,8 +18,8 @@ DATA_PEN = 0
 DATA_BRUSH = 1
 
 
-def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray = None, mode='mean', yrange=None,
-                   prct=5):
+def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray = None,
+                   indices: list[np.ndarray] = None, colors: list[QColor] = None, mode='mean', yrange=None, prct=5):
     """
     Plot waveforms from spike data.
 
@@ -36,15 +36,23 @@ def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray =
     plt.setLabel('left', text=f'amplitude ({spike_data.waveform_units})')
     plt.setLabel('bottom', text='time', units='s')
 
-    if labels is None:
+    if labels is None and indices is None:
         waveforms = spike_data.waveforms * spike_data.waveform_conversion_factor
         items = [_plot_waveforms(plt, waveforms, spike_data.waveform_timestamps, color='k', mode=mode, prct=prct)]
-    else:
+    elif labels is not None:
         items = []
         for i_cluster in range(np.max(labels)+1):
             waveforms = spike_data.waveforms[labels == i_cluster] * spike_data.waveform_conversion_factor
             itemsInCluster = _plot_waveforms(plt, waveforms=waveforms, timestamps=spike_data.waveform_timestamps,
                                              color=gui.default_color(i_cluster), mode=mode, prct=prct)
+            items.append(itemsInCluster)
+    elif indices is not None:
+        items = []
+        for i_cluster in range(len(indices)):
+            waveforms = spike_data.waveforms[indices[i_cluster]] * spike_data.waveform_conversion_factor
+            color = gui.default_color(i_cluster) if colors is None else colors[i_cluster]
+            itemsInCluster = _plot_waveforms(plt, waveforms=waveforms, timestamps=spike_data.waveform_timestamps,
+                                             color=color, mode=mode, prct=prct)
             items.append(itemsInCluster)
 
     # Set axis limits
@@ -127,6 +135,7 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
 
 
 def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.ndarray = None,
+                  indices: list[np.ndarray] = None, colors: list[QColor] = None,
                   dims: typing.Union[tuple, list, str] = 'xy'):
     app = _get_or_create_app()
     plt, layout, make_new_plot = _validate_or_create_plot(plt)
@@ -162,24 +171,23 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
             if dims[i] >= spike_features.ndims or dims[i] < 0:
                 raise ValueError(f"dims[{i}] = {dims[i]} exceeds feature space dimensions [0, {spike_features.ndims}]")
 
-    if labels is None:
+    items = []
+    if labels is None and indices is None:
         features = spike_features.features[:, dims]
         color = pg.mkColor('k')
         scatter = pg.ScatterPlotItem(pos=features, pen=pg.mkPen(color), brush=pg.mkBrush(color), size=2)
         plt.addItem(scatter)
-        items = [[scatter]]
-    else:
-        items = []
+        items.append([scatter])
+    elif labels is not None:
         for i_cluster in range(np.max(labels)+1):
             features = spike_features.features[labels == i_cluster, :][:, dims]
             color = gui.default_color(i_cluster)
-            pen = pg.mkPen(color)
-            brush = pg.mkBrush(color)
-            scatter = pg.ScatterPlotItem(pos=features, pen=pen, brush=brush, size=2)
-            QGraphicsItem.setData(scatter, DATA_PEN, pen)
-            QGraphicsItem.setData(scatter, DATA_BRUSH, brush)
-            plt.addItem(scatter)
-            items.append([scatter])
+            _plot_features_single_cluster(color, features, items, plt)
+    elif indices is not None:
+        for i_cluster in range(len(indices)):
+            features = spike_features.features[indices[i_cluster], :][:, dims]
+            color = colors[i_cluster]
+            _plot_features_single_cluster(color, features, items, plt)
 
     plt.setLabel('bottom', xlabel)
     plt.setLabel('left', ylabel)
@@ -188,6 +196,16 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
         app.exec_()
 
     return plt, items
+
+
+def _plot_features_single_cluster(color, features, items, plt):
+    pen = pg.mkPen(color)
+    brush = pg.mkBrush(color)
+    scatter = pg.ScatterPlotItem(pos=features, pen=pen, brush=brush, size=2)
+    QGraphicsItem.setData(scatter, DATA_PEN, pen)
+    QGraphicsItem.setData(scatter, DATA_BRUSH, brush)
+    plt.addItem(scatter)
+    items.append([scatter])
 
 
 def _get_or_create_app():

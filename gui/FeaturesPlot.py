@@ -2,8 +2,10 @@ import pyqtgraph as pg
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import *
 from pyqtgraph import ViewBox
+
 from gui.pyqtgraph_utils import linkAxes
 from gui.plot import *
+from gui.ClusterSelector import ClusterItem
 
 
 # noinspection PyPep8Naming
@@ -45,21 +47,24 @@ class FeaturesPlot(QWidget):
         linkAxes(yzView, xzView, ViewBox.YAxis, ViewBox.YAxis, reciprocal=True)
         self.setLayout(layout)
 
-    def plot(self, spikeData, spikeFeatures, spikeLabels, clusterVisible=None):
+    def plot(self, spikeData, spikeFeatures, spikeClusters: typing.Sequence[ClusterItem]):
         self.waveformPlot.clear()
         self.xyPlot.clear()
         self.xzPlot.clear()
         self.yzPlot.clear()
 
+        indices = [sc.indices for sc in spikeClusters]
+        colors = [sc.color for sc in spikeClusters]
+
         self.itemsPerCluster = []
         if spikeData is not None:
-            _, waveformItems = plot_waveforms(spikeData, labels=spikeLabels, plt=self.waveformPlot, mode='mean')
+            _, waveformItems = plot_waveforms(spikeData, indices=indices, colors=colors, plt=self.waveformPlot, mode='mean')
             self.autoRange(features=False, waveforms=True)
             self.itemsPerCluster = waveformItems
         if spikeFeatures is not None:
-            _, xyItems = plot_features(spikeFeatures, dims='xy', labels=spikeLabels, plt=self.xyPlot)
-            _, xzItems = plot_features(spikeFeatures, dims='xz', labels=spikeLabels, plt=self.xzPlot)
-            _, yzItems = plot_features(spikeFeatures, dims='yz', labels=spikeLabels, plt=self.yzPlot)
+            _, xyItems = plot_features(spikeFeatures, dims='xy', indices=indices, colors=colors, plt=self.xyPlot)
+            _, xzItems = plot_features(spikeFeatures, dims='xz', indices=indices, colors=colors, plt=self.xzPlot)
+            _, yzItems = plot_features(spikeFeatures, dims='yz', indices=indices, colors=colors, plt=self.yzPlot)
             self.autoRange(features=True, waveforms=False)
             if self.itemsPerCluster:
                 for i in range(len(self.itemsPerCluster)):
@@ -71,19 +76,37 @@ class FeaturesPlot(QWidget):
             for i in range(len(self.itemsPerCluster)):
                 self.itemsPerCluster[i].extend(yzItems[i])
 
-        if clusterVisible is not None and self.itemsPerCluster:
+        # Set visibility
+        if self.itemsPerCluster:
             for i in range(len(self.itemsPerCluster)):
-                self.setClusterVisible(i, clusterVisible[i])
+                visibility = spikeClusters[i].visible
+                for item in self.itemsPerCluster[i]:
+                    item.setVisible(visibility)
 
-    def setClusterVisible(self, index, visible=True):
-        for item in self.itemsPerCluster[index]:
+        # Subscribe to color changes
+        if self.itemsPerCluster:
+            for i in range(len(self.itemsPerCluster)):
+                spikeClusters[i].plotItems = self.itemsPerCluster[i]
+
+    @staticmethod
+    def setClusterVisible(items: typing.Iterable[QGraphicsItem], visible: bool):
+        for item in items:
             item.setVisible(visible)
 
-    def isClusterVisible(self, index):
-        visible = True
-        for item in self.itemsPerCluster[index]:
-            visible = visible and item.isVisible()
-        return visible
+    @staticmethod
+    def setClusterColor(items: typing.Iterable[QGraphicsItem], color: QColor):
+        """Change color but keep alpha."""
+        for item in items:
+            pen: QPen = QGraphicsObject.data(item, DATA_PEN)
+            brush: QBrush = QGraphicsObject.data(item, DATA_BRUSH)
+            if pen is not None:
+                color.setAlpha(pen.color().alpha())
+                pen.setColor(color)
+                item.setPen(pen)
+            if brush is not None:
+                color.setAlpha(brush.color().alpha())
+                brush.setColor(color)
+                item.setBrush(brush)
 
     def autoRange(self, features=True, waveforms=True):
         if features:
@@ -92,54 +115,5 @@ class FeaturesPlot(QWidget):
             self.xzPlot.autoRange()
         if waveforms:
             self.waveformPlot.autoRange()
-
-    def reorder(self, order: typing.Union[list[int], tuple[int]] = None, moveSource: int = None, moveCount: int = None, moveDestination: int = None):
-        """
-        Reassign colors after moving cluster indices. Only RGB values are overwritten by gui.default_colors().
-        QBrush/QPen settings will be preserved. This is done by updating the stored QPen/QBrush objects.
-        Requires the stored QGraphicsItem to have custom data attached via QGraphicsItem.setData() to work.
-
-        :return: None
-        """
-        # Reorder self.itemsPerCluster according to new cluster order
-        # Mode 1 : use new order (e.g. [1,2,3,0,4,5])
-        ipc = self.itemsPerCluster
-        ipc_new = ipc.copy()
-        if order is not None and order:
-            for i in range(len(ipc)):
-                ipc_new[i] = ipc[order[i]]
-        else:
-            ipc_moved = ipc[moveSource:moveSource + moveCount]
-            # Moving up
-            if moveSource > moveDestination:
-                del ipc_new[moveSource:moveSource + moveCount]
-                ipc_new[moveDestination:moveDestination] = ipc_moved
-            elif moveSource < moveDestination:
-                ipc_new[moveDestination:moveDestination] = ipc_moved
-                del ipc_new[moveSource:moveSource + moveCount]
-            else:
-                return
-        self.itemsPerCluster = ipc_new
-
-
-        # Reorder plot items so they appear in the new order
-        # Re-assign colors
-        for i in range(len(self.itemsPerCluster)):
-            for item in self.itemsPerCluster[i]:
-                pen: QPen = QGraphicsObject.data(item, DATA_PEN)
-                brush: QBrush = QGraphicsObject.data(item, DATA_BRUSH)
-                newColor = gui.default_color(i)
-                if pen is not None:
-                    color = pen.color()
-                    newColor.setAlpha(color.alpha())
-                    pen.setColor(newColor)
-                    item.setPen(pen)
-                if brush is not None:
-                    color = brush.color()
-                    newColor.setAlpha(color.alpha())
-                    brush.setColor(newColor)
-                    item.setBrush(brush)
-
-
 
 
