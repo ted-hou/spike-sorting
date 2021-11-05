@@ -73,10 +73,6 @@ class ClusterTreeItem(ClusterItem):
         if colorRange is None:
             self._colorRange = gui.ColorRange()
 
-    # Ported from C++, might not be necessary in python because GC
-    def __del__(self):
-        self._children.clear()
-
     def isValid(self) -> bool:
         """Either a branch node, or a leaf node with non-empty indices."""
         return self.childCount() > 0 or self._indices is not None
@@ -195,6 +191,10 @@ class ClusterTreeItem(ClusterItem):
         self._colorRange = value
         self.onColorChanged(self.color)
 
+    def children(self):
+        """Return a list of child items. This list is a copy of the internal list so it's safe to modify."""
+        return self._children.copy()
+
     def child(self, row: int) -> ClusterTreeItem | None:
         if row < 0 or row >= len(self._children):
             return None
@@ -218,43 +218,21 @@ class ClusterTreeItem(ClusterItem):
             item.parent = self
         self.indices = None
         self.dirty = True
-        self.reassignColors()
 
-    def removeChildren(self, row: int, count: int):
+    def removeChildren(self, row: int, count: int) -> typing.Sequence[ClusterTreeItem]:
         for c in self._children[row:row + count]:
             c.parent = None
+        items = self._children[row:row + count]
         del self._children[row:row + count]
         self.indices = None
         self.dirty = True
-        # self.reassignColors()
-
-    def popChildren(self, row: int, count) -> list[ClusterTreeItem]:
-        items = self._children[row:row + count]
-        self.removeChildren(row, count)
         return items
 
     def insertChild(self, row: int, item: ClusterTreeItem):
         self.insertChildren(row, [item])
 
-    def appendChild(self, item: ClusterTreeItem):
-        self.insertChild(self.childCount(), item)
-        item.parent = self
-        self.dirty = True
-
-    def removeChild(self, row: int):
-        self.removeChildren(row, 1)
-
-    def popChild(self, row: int) -> ClusterTreeItem:
-        return self.popChildren(row, 1)[0]
-
-    def reassignColors(self):
-        childCount = self.childCount()
-        if childCount > 0:
-            colorRanges = self.colorRange.split(childCount, 'hue')
-            for i in range(childCount):
-                child = self.child(i)
-                child.colorRange = colorRanges[i]
-                child.reassignColors()
+    def removeChild(self, row: int) -> ClusterTreeItem:
+        return self.removeChildren(row, 1)[0]
 
     def copy(self) -> ClusterTreeItem:
         """Return a childless shallow copy of the item"""
@@ -319,6 +297,11 @@ class ClusterTreeModel(QAbstractItemModel):
     rootItem: ClusterTreeItem
     _mimeType = "application/vnd.text.list"
 
+    # signals
+    itemsAdded = pyqtSignal(list)
+    itemsRemoved = pyqtSignal(list)
+    itemsRecolored = pyqtSignal(list)
+
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.rootItem = ClusterTreeItem('Root')
@@ -326,10 +309,15 @@ class ClusterTreeModel(QAbstractItemModel):
     def __del__(self):
         del self.rootItem
 
-    def loadFromIndices(self, indices: list):
+    def loadFromIndices(self, indices: list, seed: int = None):
         self.beginResetModel()
         del self.rootItem
         self.rootItem = self.itemFromIndices('Root', indices)
+        leaves = self.rootItem.leaves()
+        leafNames = gui.randomNames(count=len(leaves), seed=seed)
+        for i in range(len(leaves)):
+            leaves[i].name = leafNames[i]
+        self.recolorChildItems(self.rootItem)
         self.endResetModel()
 
     def itemFromIndices(self, name: str, indices: list) -> ClusterTreeItem:
@@ -339,10 +327,10 @@ class ClusterTreeModel(QAbstractItemModel):
         item = ClusterTreeItem(name)
         for i in range(len(indices)):
             if isinstance(indices[i], np.ndarray):
-                childItem = ClusterTreeItem(gui.randomNames()[0], indices[i])
+                childItem = ClusterTreeItem('', indices[i])
             else:
-                childItem = self.itemFromIndices(gui.randomNames()[0], indices[i])
-            item.appendChild(childItem)
+                childItem = self.itemFromIndices('Group', indices[i])
+            item.insertChild(item.childCount(), childItem)
         return item
 
     def index(self, row: int, column: int, parent: QModelIndex = None) -> QModelIndex:
@@ -507,7 +495,7 @@ class ClusterTreeModel(QAbstractItemModel):
         # Cannot move an item onto its current parent
         if row == -1 and parent.isValid():
             for path in paths:
-                parentIndex = self._pathToIndex(path).parent()
+                parentIndex = self.pathToIndex(path).parent()
                 if parentIndex == parent:
                     return False
 
@@ -519,22 +507,21 @@ class ClusterTreeModel(QAbstractItemModel):
 
         # Decode & sort data
         paths = self._parseMimeData(data)
-        ClusterTreeModel._sortPaths(paths)
+        ClusterTreeModel.sortPaths(paths)
 
         # Remove and store all items in path
         items = []
         for path in paths:
-            index = self._pathToIndex(path)
-            i = index.row()
-            parentIndex = self._pathToIndex(path[0:len(path) - 1])
-            parentItem = parentIndex.internalPointer() if parentIndex.isValid() else self.rootItem
-            self.beginRemoveRows(parentIndex, i, i)
-            items.insert(0, parentItem.popChild(i))
-            self.endRemoveRows()
+            index = self.pathToIndex(path)
+            parentIndex = self.pathToIndex(path[0:len(path) - 1])
+            removedItem = self.removeItem(index.row(), parentIndex)
+            if removedItem is None:
+                return False
+            items.insert(0, removedItem)
 
         # Insert removed items into new position
         parentItem = parent.internalPointer() if parent.isValid() else self.rootItem
-        if row == -1:
+        if row == -1 or row > parentItem.childCount():
             row = parentItem.childCount()
 
         # If parentItem has no children, it will be copied into a child item
@@ -542,11 +529,12 @@ class ClusterTreeModel(QAbstractItemModel):
             items.insert(0, parentItem.copy())
             parentItem._indices = None
             parentItem.plotItems = None
-        self.beginInsertRows(parent, row, row + len(items) - 1)
-        parentItem.insertChildren(row, items)
-        self.endInsertRows()
+            parentItem.name = "Group"
+        if not self.insertItems(row, items, parent):
+            return False
 
-        self._removeInvalidChildren()
+        self.removeInvalidChildren()
+        self.recolorChildItems(self.rootItem)
 
         # Refresh CheckState (for visual update only)
         newIndices = [self.index(item.row(), 0, parent) for item in items]
@@ -555,22 +543,83 @@ class ClusterTreeModel(QAbstractItemModel):
 
         return True
 
-    def _removeInvalidChildren(self, parentIndex: QModelIndex = QModelIndex()):
+    def insertItems(self, row: int, items: typing.Sequence[ClusterTreeItem], parent: QModelIndex = QModelIndex()) -> bool:
+        if not parent.isValid():
+            parentItem = self.rootItem
+        else:
+            parentItem = parent.internalPointer()
+
+        # Fail if inserting at invalid index, or items is None or empty.
+        childCount = parentItem.childCount()
+        if row > childCount or row < 0 or items is None or not items:
+            return False
+
+        self.beginInsertRows(parent, row, row + len(items) - 1)
+        parentItem.insertChildren(row, items)
+        self.endInsertRows()
+
+        self.itemsAdded.emit(items)
+
+        return True
+
+    def insertItem(self, row: int, item: ClusterTreeItem, parent: QModelIndex = QModelIndex()) -> bool:
+        return self.insertItems(row, [item], parent)
+
+    def removeItems(self, row: int, count: int, parent: QModelIndex = QModelIndex()) -> typing.Sequence[ClusterTreeItem] | None:
+        """Remove and return a list of removed items. Returns None if invalid arguments were provided."""
+        if not parent.isValid():
+            parentItem = self.rootItem
+        else:
+            parentItem = parent.internalPointer()
+
+        # Fail if removing invalid index range.
+        if count <= 0 or row < 0 or row + count > parentItem.childCount():
+            return None
+
+        self.beginRemoveRows(parent, row, row + count - 1)
+        items = parentItem.removeChildren(row, count)
+        self.endRemoveRows()
+
+        self.itemsRemoved.emit(items)
+        return items
+
+    def removeItem(self, row: int, parent: QModelIndex = QModelIndex()) -> ClusterTreeItem | None:
+        """Remove and return removed item. Returns None if invalid arguments were provided."""
+        items = self.removeItems(row, 1, parent)
+        if items is None:
+            return None
+        else:
+            return items[0]
+
+    def recolorChildItems(self, item: ClusterTreeItem = None):
+        """Reassign colors for an item's descendants."""
+
+        if item is None:
+            item = self.rootItem
+
+        childCount = item.childCount()
+        if childCount > 0:
+            colorRanges = item.colorRange.split(childCount, 'hue')
+            for i in range(childCount):
+                child = item.child(i)
+                child.colorRange = colorRanges[i]
+                self.recolorChildItems(child)
+            self.itemsRecolored.emit(item.children())
+
+    def removeInvalidChildren(self, parentIndex: QModelIndex = QModelIndex()):
         """Recursively remove invalid ClusterTreeItem's from model."""
         i = 0
         parentItem = parentIndex.internalPointer() if parentIndex.isValid() else self.rootItem
         while parentItem.childCount() > i:
             childIndex = self.index(i, 0, parentIndex)
-            self._removeInvalidChildren(childIndex)
+            self.removeInvalidChildren(childIndex)
             childItem = childIndex.internalPointer()
             if childItem.isValid():
                 i += 1
             else:
-                self.beginRemoveRows(parentIndex, i, i)
-                parentItem.removeChild(i)
-                self.endRemoveRows()
+                self.removeItem(i, parentIndex)
 
-    def _pathToIndex(self, path: list[int]) -> QModelIndex:
+    def pathToIndex(self, path: list[int]) -> QModelIndex:
         if len(path) == 0:
             return QModelIndex()
         index = QModelIndex()
@@ -579,7 +628,7 @@ class ClusterTreeModel(QAbstractItemModel):
         return index
 
     @staticmethod
-    def _indexToPath(index: QModelIndex) -> list[int]:
+    def indexToPath(index: QModelIndex) -> list[int]:
         if index is None or not index.isValid():
             return []
         path = [index.row()]
@@ -589,7 +638,7 @@ class ClusterTreeModel(QAbstractItemModel):
         return path
 
     @staticmethod
-    def _indexDepth(index: QModelIndex) -> int:
+    def indexDepth(index: QModelIndex) -> int:
         if index is None or not index.isValid():
             return 0
         depth = 0
@@ -600,24 +649,24 @@ class ClusterTreeModel(QAbstractItemModel):
         return depth
 
     @staticmethod
-    def _pathOrder(path: typing.Sequence[int], maxDepth: int):
+    def pathOrder(path: typing.Sequence[int], maxDepth: int):
         value = 0
         for j in range(len(path)):
             value += 2 ** (8 * (maxDepth - j - 1)) * path[j]
         return value
 
     @staticmethod
-    def _sortPaths(paths: list[list[int]], reverse=True):
+    def sortPaths(paths: list[list[int]], reverse=True):
         """Sort paths from bottom of tree to top of tree."""
 
         maxDepth = max([len(p) for p in paths])
 
-        paths.sort(key=lambda path: ClusterTreeModel._pathOrder(path, maxDepth), reverse=reverse)
+        paths.sort(key=lambda path: ClusterTreeModel.pathOrder(path, maxDepth), reverse=reverse)
 
     @staticmethod
-    def _sortIndices(indices: list[QModelIndex], reverse=True):
-        maxDepth = max([ClusterTreeModel._indexDepth(index) for index in indices])
-        indices.sort(key=lambda index: ClusterTreeModel._pathOrder(ClusterTreeModel._indexToPath(index), maxDepth), reverse=reverse)
+    def sortIndices(indices: list[QModelIndex], reverse=True):
+        maxDepth = max([ClusterTreeModel.indexDepth(index) for index in indices])
+        indices.sort(key=lambda index: ClusterTreeModel.pathOrder(ClusterTreeModel.indexToPath(index), maxDepth), reverse=reverse)
 
     @staticmethod
     def canMerge(indices: typing.Iterable[QModelIndex]) -> bool:
@@ -637,7 +686,7 @@ class ClusterTreeModel(QAbstractItemModel):
 
         # Sort indices from bottom to top
         indices = indices.copy()
-        ClusterTreeModel._sortIndices(indices, reverse=True)
+        ClusterTreeModel.sortIndices(indices, reverse=True)
 
         # Find shallowest index, this will be replaced by the merged index
         shallowestIndex = indices[-1]
@@ -651,19 +700,14 @@ class ClusterTreeModel(QAbstractItemModel):
         for index in indices:
             parentIndex = index.parent()
             row = index.row()
-            self.beginRemoveRows(parentIndex, row, row)
-            parentItem = parentIndex.internalPointer() if parentIndex.isValid() else self.rootItem
-            parentItem.removeChild(row)
-            self.endRemoveRows()
+            self.removeItem(row, parentIndex)
 
         # Insert merged item
-        self.beginInsertRows(targetParentIndex, targetRow, targetRow)
-        targetParentItem = targetParentIndex.internalPointer() if targetParentIndex.isValid() else self.rootItem
-        targetParentItem.insertChild(targetRow, mergedItems)
-        self.endInsertRows()
+        self.insertItem(targetRow, mergedItems, targetParentIndex)
 
         # Remove invalid children
-        self._removeInvalidChildren()
+        self.removeInvalidChildren()
+        self.recolorChildItems(self.rootItem)
 
         return True
 
@@ -680,14 +724,15 @@ class ClusterSelector(QTreeView):
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
         self.mergeAction = self.createContextMenuActions()
-    #
+
     # def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
     #     super().selectionChanged(selected, deselected)
     #     # print([i.row() for i in selected.indexes()], [i.row() for i in deselected.indexes()])
 
-    def load(self, labels):
+    def load(self, labels, seed: int = None):
         indicesList = labelsToIndices(labels)
-        self.model().loadFromIndices(indicesList)
+        model: ClusterTreeModel = self.model()
+        model.loadFromIndices(indicesList, seed=seed)
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = QMenu(self)

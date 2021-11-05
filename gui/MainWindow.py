@@ -49,7 +49,7 @@ class MainWindow(QMainWindow):
         # ClusterSelector
         dock = QDockWidget("Clusters", self)
         self.clusterSelector = ClusterSelector(dock)
-        self.clusterSelector.load(spikeLabels[self.channelSelector.currentChannel])
+        self.clusterSelector.load(spikeLabels[self.channelSelector.currentChannel], seed=12345 + self.channelSelector.currentChannel)
         dock.setWidget(self.clusterSelector)
         dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -64,21 +64,9 @@ class MainWindow(QMainWindow):
         self.channelSelector.currentIndexChanged.connect(self.onChannelChanged)
         self.channelSelector.currentIndexChanged.emit(self.channelSelector.currentIndex)
 
-        # Handle cluster visibility change
-        # self.clusterSelector.itemCheckStateChanged.connect(self.featuresPlot.setClusterVisible)
-
-        # Handle cluster index reordering
-        # self.clusterSelector.itemsMoved.connect(self.onClusterMoved)
-
     def onChannelChanged(self, i: int):
-        self.clusterSelector.load(self.spikeLabels[i])
+        self.clusterSelector.load(self.spikeLabels[i], seed=12345 + i)
         self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.clusterSelector.model().rootItem.leaves())
-    #
-    # def onClusterMoved(self, source: int, count: int, destination: int):
-    #     from spikesorting import move_clusters
-    #     i = self.channelSelector.currentIndex
-    #     move_clusters(self.spikeLabels[i], source, count, destination, in_place=True)
-    #     self.featuresPlot.reorder(moveSource=source, moveCount=count, moveDestination=destination)
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData
