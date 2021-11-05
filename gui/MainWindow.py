@@ -1,3 +1,4 @@
+from __future__ import annotations
 import sys
 import typing
 import numpy as np
@@ -12,6 +13,11 @@ from spikefeatures import SpikeFeatures
 
 # noinspection PyPep8Naming
 class MainWindow(QMainWindow):
+    _instance: MainWindow = None
+
+    def instance(self) -> MainWindow:
+        return self._instance
+
     spikeData: list[SpikeData]
     spikeFeatures: list[SpikeFeatures]
     spikeLabels: list[np.ndarray]
@@ -23,6 +29,11 @@ class MainWindow(QMainWindow):
     clusterSelector: ClusterSelector
 
     def __init__(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray], parent: QWidget = None):
+        if self._instance is None:
+            self._instance = self
+        else:
+            raise RuntimeError(f"At least one instance of MainWindow is already running.")
+
         self.spikeData = spikeData
         self.spikeFeatures = spikeFeatures
         self.spikeLabels = spikeLabels
@@ -49,7 +60,8 @@ class MainWindow(QMainWindow):
         # ClusterSelector
         dock = QDockWidget("Clusters", self)
         self.clusterSelector = ClusterSelector(dock)
-        self.clusterSelector.load(spikeLabels[self.channelSelector.currentChannel], seed=12345 + self.channelSelector.currentChannel)
+        iChn = self.channelSelector.currentChannel
+        self.clusterSelector.load(features=spikeFeatures[iChn], labels=spikeLabels[iChn], seed=12345+iChn)
         dock.setWidget(self.clusterSelector)
         dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -65,7 +77,7 @@ class MainWindow(QMainWindow):
         self.channelSelector.currentIndexChanged.emit(self.channelSelector.currentIndex)
 
     def onChannelChanged(self, i: int):
-        self.clusterSelector.load(self.spikeLabels[i], seed=12345 + i)
+        self.clusterSelector.load(features=self.spikeFeatures[i], labels=self.spikeLabels[i], seed=12345+i)
         self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.clusterSelector.model().rootItem.leaves())
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):

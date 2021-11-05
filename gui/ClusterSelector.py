@@ -73,14 +73,33 @@ class ClusterTreeItem(ClusterItem):
         if colorRange is None:
             self._colorRange = gui.ColorRange()
 
+    @staticmethod
+    def fromIndices(name: str, indices: list) -> ClusterTreeItem:
+        if len(indices) == 1 and isinstance(indices[0], list):
+            return ClusterTreeItem(name, indices[0])
+
+        item = ClusterTreeItem(name)
+
+        # Remove " (group)" suffix from name
+        name = name.split(' (group)')[0]
+        for i in range(len(indices)):
+            if isinstance(indices[i], np.ndarray):
+                childItem = ClusterTreeItem(f"{name}-{i + 1}", indices[i])
+            else:
+                childItem = ClusterTreeItem.fromIndices(f"{name}-{i + 1} (group)", indices[i])
+            item.insertChild(item.childCount(), childItem)
+        return item
+
     def isValid(self) -> bool:
         """Either a branch node, or a leaf node with non-empty indices."""
         return self.childCount() > 0 or self._indices is not None
 
     def isLeaf(self):
+        """A leaf node has no children."""
         return not self.isBranch()
 
     def isBranch(self):
+        """A branch node has one or more children, but does not contain indices data directly."""
         return self.childCount() > 0
 
     @property
@@ -279,6 +298,28 @@ class ClusterTreeItem(ClusterItem):
         mergedItem = ClusterTreeItem(name=name, indices=mergedIndices, checkState=Qt.CheckState.Checked, colorRange=maxColorRange)
         return mergedItem
 
+    def split(self, data, method='kmeans', n=3) -> ClusterTreeItem:
+        """
+        Split an item into n subclusters.
+        :param data: spike features (see spikesorting.cluster). Can be np.ndarray or SpikeFeatures
+        :param method: clustering method, default 'kmeans'
+        :param n: number of clusters
+        :return: ClusterTreeItem containing all sub-clusters as child items
+        """
+        from spikesorting import cluster
+        labels = cluster(data.features[self.indices, :], n_clusters=n, method=method)
+        nSubClusters = labels.max(initial=-1) + 1
+
+        indices = self.indices
+        splitIndices = []
+        for i in range(nSubClusters):
+            splitIndices.append(indices[labels == i])
+
+        item = ClusterTreeItem.fromIndices(f"{self.name} (group)", splitIndices)
+        item._colorRange = self._colorRange
+        item._checkState = Qt.CheckState.Checked
+        return item
+
     @staticmethod
     def containsDirectDescendants(items: typing.Iterable[ClusterTreeItem]):
         """Check if any item in the list is a direct descendant of another item in the list."""
@@ -294,6 +335,8 @@ class ClusterTreeItem(ClusterItem):
 
 # noinspection PyPep8Naming
 class ClusterTreeModel(QAbstractItemModel):
+    from spikefeatures import SpikeFeatures
+    features: SpikeFeatures | None
     rootItem: ClusterTreeItem
     _mimeType = "application/vnd.text.list"
 
@@ -305,33 +348,21 @@ class ClusterTreeModel(QAbstractItemModel):
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.rootItem = ClusterTreeItem('Root')
+        self.spikeFeatures = None
 
     def __del__(self):
         del self.rootItem
 
-    def loadFromIndices(self, indices: list, seed: int = None):
+    def loadIndices(self, indices: list, seed: int = None):
         self.beginResetModel()
         del self.rootItem
-        self.rootItem = self.itemFromIndices('Root', indices)
+        self.rootItem = ClusterTreeItem.fromIndices('Root', indices)
         leaves = self.rootItem.leaves()
         leafNames = gui.randomNames(count=len(leaves), seed=seed)
         for i in range(len(leaves)):
             leaves[i].name = leafNames[i]
         self.recolorChildItems(self.rootItem)
         self.endResetModel()
-
-    def itemFromIndices(self, name: str, indices: list) -> ClusterTreeItem:
-        if len(indices) == 1 and isinstance(indices[0], list):
-            return ClusterTreeItem(name, indices[0])
-
-        item = ClusterTreeItem(name)
-        for i in range(len(indices)):
-            if isinstance(indices[i], np.ndarray):
-                childItem = ClusterTreeItem('', indices[i])
-            else:
-                childItem = self.itemFromIndices('Group', indices[i])
-            item.insertChild(item.childCount(), childItem)
-        return item
 
     def index(self, row: int, column: int, parent: QModelIndex = None) -> QModelIndex:
         if not self.hasIndex(row, column, parent):
@@ -669,7 +700,10 @@ class ClusterTreeModel(QAbstractItemModel):
         indices.sort(key=lambda index: ClusterTreeModel.pathOrder(ClusterTreeModel.indexToPath(index), maxDepth), reverse=reverse)
 
     @staticmethod
-    def canMerge(indices: typing.Iterable[QModelIndex]) -> bool:
+    def canMerge(indices: typing.Sequence[QModelIndex]) -> bool:
+        if len(indices) <= 1:
+            return False
+
         # Check if list contains direct descendants of any other item in list
         for index in indices:
             parentIndex = index.parent()
@@ -680,7 +714,7 @@ class ClusterTreeModel(QAbstractItemModel):
         return True
 
     def merge(self, indices: list[QModelIndex]) -> bool:
-        """Merge indices in list, and replace the shallowest item with the merged item."""
+        """Merge indices in list, and replace the shallowest item with the merged item. If a branch item is listed, all its leaves will be merged."""
         if not ClusterTreeModel.canMerge(indices):
             return False
 
@@ -710,6 +744,29 @@ class ClusterTreeModel(QAbstractItemModel):
         # Remove invalid children
         self.removeInvalidChildren()
         self.recolorChildItems(self.rootItem)
+        return True
+
+    @staticmethod
+    def canSplit(indices: list[QModelIndex]) -> bool:
+        """Only non-root, leaf nodes can be split."""
+        return all([index.isValid() and index.internalPointer().isLeaf for index in indices])
+
+    def split(self, indices: list[QModelIndex], method='kmeans', n=3) -> bool:
+        """Split each item into a specified number of sub-clusters."""
+        if not ClusterTreeModel.canSplit(indices):
+            return False
+
+        for index in indices:
+            item: ClusterTreeItem = index.internalPointer()
+            row = item.row()
+            parentIndex = index.parent()
+            newItem = item.split(self.features, method=method, n=n)
+            self.removeItem(row, parentIndex)
+            self.insertItem(row, newItem, parentIndex)
+            self.recolorChildItems(newItem)
+            # newIndex = self.index(row, 0, parentIndex)
+            # self.beginInsertRows(newIndex, 0, newItem.childCount() - 1)
+            # self.endInsertRows()
 
         return True
 
@@ -725,30 +782,42 @@ class ClusterSelector(QTreeView):
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
-        self.mergeAction = self.createContextMenuActions()
+        self.mergeAction, self.splitAction = self.createContextMenuActions()
 
     # def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
     #     super().selectionChanged(selected, deselected)
     #     # print([i.row() for i in selected.indexes()], [i.row() for i in deselected.indexes()])
 
-    def load(self, labels, seed: int = None):
+    def load(self, features, labels, seed: int = None):
         indicesList = labelsToIndices(labels)
         model: ClusterTreeModel = self.model()
-        model.loadFromIndices(indicesList, seed=seed)
+        model.features = features
+        model.loadIndices(indicesList, seed=seed)
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = QMenu(self)
-        menu.addAction("Split")
         menu.addAction(self.mergeAction)
+        menu.addAction(self.splitAction)
+        self.mergeAction.setEnabled(ClusterTreeModel.canMerge(self.selectedIndexes()))
+        self.splitAction.setEnabled(ClusterTreeModel.canSplit(self.selectedIndexes()))
         menu.exec(event.globalPos())
 
     def createContextMenuActions(self):
         mergeAction = QAction("Merge", self)
         mergeAction.triggered.connect(self.mergeSelected)
-        return mergeAction
+
+        splitAction = QAction("Split", self)
+        splitAction.triggered.connect(self.splitSelected)
+
+        return mergeAction, splitAction
 
     def mergeSelected(self):
-        self.model().merge(self.selectedIndexes())
+        model: ClusterTreeModel = self.model()
+        model.merge(self.selectedIndexes())
+
+    def splitSelected(self):
+        model: ClusterTreeModel = self.model()
+        model.split(self.selectedIndexes())
 
 
 # noinspection PyPep8Naming
