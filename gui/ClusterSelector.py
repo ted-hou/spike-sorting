@@ -694,16 +694,18 @@ class ClusterTreeModel(QAbstractItemModel):
         targetRow = shallowestIndex.row()
 
         # Generate merged item
-        mergedItems = ClusterTreeItem.merge([index.internalPointer() for index in indices], name=shallowestIndex.internalPointer().name)
+        mergedItems = ClusterTreeItem.merge([index.internalPointer() for index in indices], name='+'.join([idx.internalPointer().name for idx in indices][::-1]))#, name=shallowestIndex.internalPointer().name)
 
         # Remove merged items
         for index in indices:
             parentIndex = index.parent()
             row = index.row()
-            self.removeItem(row, parentIndex)
+            if self.removeItem(row, parentIndex) is None:
+                raise RuntimeError(f"Failed to remove item at row {row} for parent path {self.indexToPath(parentIndex)}")
 
         # Insert merged item
-        self.insertItem(targetRow, mergedItems, targetParentIndex)
+        if not self.insertItem(targetRow, mergedItems, targetParentIndex):
+            raise RuntimeError(f"Failed to insert item at row {targetRow} for parent path {self.indexToPath(targetParentIndex)}")
 
         # Remove invalid children
         self.removeInvalidChildren()
