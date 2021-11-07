@@ -31,19 +31,22 @@ class ClusterItem(ABC):
     def visible(self) -> bool:
         ...
 
-    plotItems = None
+    def isLeaf(self) -> bool:
+        return True
 
-    # TODO: Do this through events rather than explicitly calling FeaturesPlot methods
-    def onColorChanged(self, color: QColor):
-        from gui.FeaturesPlot import FeaturesPlot
-        if self.plotItems is not None:
-            FeaturesPlot.setClusterColor(self.plotItems, color)
+    def isBranch(self) -> bool:
+        return False
 
-    # TODO: Do this through events rather than explicitly calling FeaturesPlot methods
-    def onVisibilityChanged(self, visible: bool):
-        from gui.FeaturesPlot import FeaturesPlot
-        if self.plotItems is not None:
-            FeaturesPlot.setClusterVisible(self.plotItems, visible)
+    def __eq__(self, other):
+        return self.name == other.name
+        # return np.array_equal(self.indices, other.indices)
+
+    def __hash__(self):
+        return hash(self.name)
+        # return hash(self.indices.tobytes())
+
+    def __ne__(self, other):
+        return not(self == other)
 
 
 # noinspection PyPep8Naming
@@ -70,8 +73,7 @@ class ClusterTreeItem(ClusterItem):
         self._indices = indices
         self._cachedIndices = None
         self._dirty = True
-        if colorRange is None:
-            self._colorRange = gui.ColorRange()
+        self._colorRange = gui.ColorRange() if colorRange is None else colorRange
 
     @staticmethod
     def fromIndices(name: str, indices: list) -> ClusterTreeItem:
@@ -177,12 +179,9 @@ class ClusterTreeItem(ClusterItem):
         for child in self._children:
             child.onParentCheckStateChanged(value)
 
-        self.onVisibilityChanged(self.visible)
-
     def onParentCheckStateChanged(self, value: Qt.CheckState):
         if value is Qt.CheckState.Checked or value is Qt.CheckState.Unchecked:
             self._checkState = value
-            self.onVisibilityChanged(self.visible)
             for child in self._children:
                 child.onParentCheckStateChanged(value)
 
@@ -208,7 +207,6 @@ class ClusterTreeItem(ClusterItem):
     @colorRange.setter
     def colorRange(self, value: gui.ColorRange):
         self._colorRange = value
-        self.onColorChanged(self.color)
 
     def children(self):
         """Return a list of child items. This list is a copy of the internal list so it's safe to modify."""
@@ -256,17 +254,36 @@ class ClusterTreeItem(ClusterItem):
     def copy(self) -> ClusterTreeItem:
         """Return a childless shallow copy of the item"""
         obj = ClusterTreeItem(name=self._name, indices=self._indices, checkState=self._checkState, colorRange=self.colorRange)
-        obj.plotItems = self.plotItems
         return obj
 
     def leaves(self) -> list[ClusterTreeItem]:
-        """Return a list containing all leaf nodes in the tree."""
+        """Return all leaf nodes in the tree."""
+        if self.isLeaf():
+            return [self]
+        else:
+            items = []
+            for child in self._children:
+                if child.childCount() == 0 and child._indices is not None:
+                    items.append(child)
+                elif child.childCount() > 0:
+                    items.extend(child.leaves())
+            return items
+
+    def branches(self) -> list[ClusterTreeItem]:
+        """Return all branch nodes in the tree."""
         items = []
-        for child in self._children:
-            if child.childCount() == 0 and child._indices is not None:
-                items.append(child)
-            elif child.childCount() > 0:
-                items.extend(child.leaves())
+        if self.isBranch():
+            items.append(self)
+            for child in self._children:
+                items.extend(child.branches())
+        return items
+
+    def traversal(self) -> list[ClusterTreeItem]:
+        """Returns all items from a pre-order traversal of the tree."""
+        items = [self]
+        if len(self._children) > 0:
+            for child in self._children:
+                items.extend(child.traversal())
         return items
 
     @staticmethod
@@ -335,8 +352,10 @@ class ClusterTreeItem(ClusterItem):
 
 # noinspection PyPep8Naming
 class ClusterTreeModel(QAbstractItemModel):
+    from spikedata import SpikeData
     from spikefeatures import SpikeFeatures
-    features: SpikeFeatures | None
+    spikeData: SpikeData | None
+    spikeFeatures: SpikeFeatures | None
     rootItem: ClusterTreeItem
     _mimeType = "application/vnd.text.list"
 
@@ -344,10 +363,12 @@ class ClusterTreeModel(QAbstractItemModel):
     itemsAdded = pyqtSignal(list)
     itemsRemoved = pyqtSignal(list)
     itemsRecolored = pyqtSignal(list)
+    itemsCheckStateChanged = pyqtSignal(list)
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent)
         self.rootItem = ClusterTreeItem('Root')
+        self.spikeData = None
         self.spikeFeatures = None
 
     def __del__(self):
@@ -448,6 +469,7 @@ class ClusterTreeModel(QAbstractItemModel):
             return True
         elif role == Qt.ItemDataRole.CheckStateRole:
             item.checkState = value
+            self.itemsCheckStateChanged.emit(item.traversal())
             # Update parents, recursively to root:
             parentIndex = index
             while parentIndex.isValid():
@@ -589,7 +611,10 @@ class ClusterTreeModel(QAbstractItemModel):
         parentItem.insertChildren(row, items)
         self.endInsertRows()
 
-        self.itemsAdded.emit(items)
+        # Signal the addition of this item, and all its children
+        allItems = []
+        [allItems.extend(item.traversal()) for item in items]
+        self.itemsAdded.emit(allItems)
 
         return True
 
@@ -611,7 +636,11 @@ class ClusterTreeModel(QAbstractItemModel):
         items = parentItem.removeChildren(row, count)
         self.endRemoveRows()
 
-        self.itemsRemoved.emit(items)
+        # Signal the removal of this item and all its children
+        allItems = []
+        [allItems.extend(item.traversal()) for item in items]
+        self.itemsRemoved.emit(allItems)
+
         return items
 
     def removeItem(self, row: int, parent: QModelIndex = QModelIndex()) -> ClusterTreeItem | None:
@@ -749,7 +778,7 @@ class ClusterTreeModel(QAbstractItemModel):
     @staticmethod
     def canSplit(indices: list[QModelIndex]) -> bool:
         """Only non-root, leaf nodes can be split."""
-        return all([index.isValid() and index.internalPointer().isLeaf for index in indices])
+        return all([index.isValid() and index.internalPointer().isLeaf() for index in indices])
 
     def split(self, indices: list[QModelIndex], method='kmeans', n=3) -> bool:
         """Split each item into a specified number of sub-clusters."""
@@ -760,7 +789,7 @@ class ClusterTreeModel(QAbstractItemModel):
             item: ClusterTreeItem = index.internalPointer()
             row = item.row()
             parentIndex = index.parent()
-            newItem = item.split(self.features, method=method, n=n)
+            newItem = item.split(self.spikeFeatures, method=method, n=n)
             self.removeItem(row, parentIndex)
             self.insertItem(row, newItem, parentIndex)
             self.recolorChildItems(newItem)
@@ -788,11 +817,11 @@ class ClusterSelector(QTreeView):
     #     super().selectionChanged(selected, deselected)
     #     # print([i.row() for i in selected.indexes()], [i.row() for i in deselected.indexes()])
 
-    def load(self, features, labels, seed: int = None):
-        indicesList = labelsToIndices(labels)
+    def load(self, data, features, labels, seed: int = None):
         model: ClusterTreeModel = self.model()
-        model.features = features
-        model.loadIndices(indicesList, seed=seed)
+        model.spikeData = data
+        model.spikeFeatures = features
+        model.loadIndices(labelsToIndices(labels), seed=seed)
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = QMenu(self)

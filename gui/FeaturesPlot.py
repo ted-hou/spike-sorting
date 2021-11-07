@@ -1,3 +1,5 @@
+import typing
+
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import *
@@ -5,6 +7,8 @@ from pyqtgraph import ViewBox
 from gui.pyqtgraph_utils import linkAxes
 from gui.plot import *
 from gui.ClusterSelector import ClusterItem
+from spikedata import SpikeData
+from spikefeatures import SpikeFeatures
 
 
 # noinspection PyPep8Naming
@@ -13,11 +17,18 @@ class FeaturesPlot(QWidget):
     xyPlot: pg.PlotItem
     xzPlot: pg.PlotItem
     yzPlot: pg.PlotItem
-    itemsPerCluster: list[list[QGraphicsItem]]
+    plotItems: dict[ClusterItem, list[QGraphicsItem]]
+    data: SpikeData = None
+    features: SpikeFeatures = None
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.plotItems = {}
         self.createPlots()
+
+    def load(self, data: SpikeData, features: SpikeFeatures):
+        self.data = data
+        self.features = features
 
     def createPlots(self):
         """Make child plot widgets in QGridLayout"""
@@ -45,66 +56,83 @@ class FeaturesPlot(QWidget):
         linkAxes(yzView, xzView, ViewBox.YAxis, ViewBox.YAxis, reciprocal=True)
         self.setLayout(layout)
 
-    def plot(self, spikeData, spikeFeatures, spikeClusters: typing.Sequence[ClusterItem]):
+    def clear(self):
         self.waveformPlot.clear()
         self.xyPlot.clear()
         self.xzPlot.clear()
         self.yzPlot.clear()
 
-        indices = [sc.indices for sc in spikeClusters]
-        colors = [sc.color for sc in spikeClusters]
+    def plot(self, clusters: typing.Sequence[ClusterItem], data: SpikeData = None, features: SpikeFeatures = None):
+        data = self.data if data is None else data
+        features = self.features if features is None else features
 
-        self.itemsPerCluster = []
-        if spikeData is not None:
-            _, waveformItems = plot_waveforms(spikeData, indices=indices, colors=colors, plt=self.waveformPlot, mode='mean')
+        indices = [cluster.indices for cluster in clusters]
+        colors = [cluster.color for cluster in clusters]
+
+        # Make a list of lists (one per cluster) to append plot items to.
+        plotItemsList = [self.plotItems[cluster] if cluster in self.plotItems else [] for cluster in clusters]
+
+        if data is not None:
+            _, waveformItems = plot_waveforms(data, indices=indices, colors=colors, plt=self.waveformPlot, mode='mean')
             self.autoRange(features=False, waveforms=True)
-            self.itemsPerCluster = waveformItems
-        if spikeFeatures is not None:
-            _, xyItems = plot_features(spikeFeatures, dims='xy', indices=indices, colors=colors, plt=self.xyPlot)
-            _, xzItems = plot_features(spikeFeatures, dims='xz', indices=indices, colors=colors, plt=self.xzPlot)
-            _, yzItems = plot_features(spikeFeatures, dims='yz', indices=indices, colors=colors, plt=self.yzPlot)
+            for i in range(len(plotItemsList)):
+                plotItemsList[i].extend(waveformItems[i])
+            # self.plotItems.update(zip(spikeClusters, waveformItems))
+        if features is not None:
+            _, xyItems = plot_features(features, dims='xy', indices=indices, colors=colors, plt=self.xyPlot)
+            _, xzItems = plot_features(features, dims='xz', indices=indices, colors=colors, plt=self.xzPlot)
+            _, yzItems = plot_features(features, dims='yz', indices=indices, colors=colors, plt=self.yzPlot)
             self.autoRange(features=True, waveforms=False)
-            if self.itemsPerCluster:
-                for i in range(len(self.itemsPerCluster)):
-                    self.itemsPerCluster[i].extend(xyItems[i])
-            else:
-                self.itemsPerCluster = xyItems
-            for i in range(len(self.itemsPerCluster)):
-                self.itemsPerCluster[i].extend(xzItems[i])
-            for i in range(len(self.itemsPerCluster)):
-                self.itemsPerCluster[i].extend(yzItems[i])
+            for i in range(len(plotItemsList)):
+                plotItemsList[i].extend(xyItems[i])
+                plotItemsList[i].extend(xzItems[i])
+                plotItemsList[i].extend(yzItems[i])
+
+        # Store list to dictionary
+        self.plotItems.update(zip(clusters, plotItemsList))
 
         # Set visibility
-        if self.itemsPerCluster:
-            for i in range(len(self.itemsPerCluster)):
-                visibility = spikeClusters[i].visible
-                for item in self.itemsPerCluster[i]:
-                    item.setVisible(visibility)
+        self.onVisibilityChanged(clusters)
 
-        # Subscribe to color changes
-        if self.itemsPerCluster:
-            for i in range(len(self.itemsPerCluster)):
-                spikeClusters[i].plotItems = self.itemsPerCluster[i]
+    def onVisibilityChanged(self, clusters: typing.Sequence[ClusterItem]):
+        for cluster in clusters:
+            if cluster in self.plotItems:
+                for item in self.plotItems[cluster]:
+                    item.setVisible(cluster.visible)
 
-    @staticmethod
-    def setClusterVisible(items: typing.Iterable[QGraphicsItem], visible: bool):
-        for item in items:
-            item.setVisible(visible)
-
-    @staticmethod
-    def setClusterColor(items: typing.Iterable[QGraphicsItem], color: QColor):
+    def onColorChanged(self, clusters: typing.Sequence[ClusterItem]):
         """Change color but keep alpha."""
-        for item in items:
-            pen: QPen = QGraphicsObject.data(item, DATA_PEN)
-            brush: QBrush = QGraphicsObject.data(item, DATA_BRUSH)
-            if pen is not None:
-                color.setAlpha(pen.color().alpha())
-                pen.setColor(color)
-                item.setPen(pen)
-            if brush is not None:
-                color.setAlpha(brush.color().alpha())
-                brush.setColor(color)
-                item.setBrush(brush)
+        for cluster in clusters:
+            if cluster in self.plotItems:
+                for item in self.plotItems[cluster]:
+                    pen: QPen = QGraphicsObject.data(item, DATA_PEN)
+                    brush: QBrush = QGraphicsObject.data(item, DATA_BRUSH)
+                    color = cluster.color
+                    if pen is not None:
+                        color.setAlpha(pen.color().alpha())
+                        pen.setColor(color)
+                        item.setPen(pen)
+                    if brush is not None:
+                        color.setAlpha(brush.color().alpha())
+                        brush.setColor(color)
+                        item.setBrush(brush)
+
+    def onClustersAdded(self, clusters: typing.Sequence[ClusterItem]):
+        # Only plot leaf items if tree nodes are given
+        clusters = [c for c in clusters if c.isLeaf()]
+        # print(f'Adding to {len(clusters)} plot:', *[c.name for c in clusters])
+        self.plot(clusters)
+
+    def onClustersRemoved(self, clusters: typing.Sequence[ClusterItem]):
+        # print(f'Removing {len(clusters)} from plot:', *[c.name for c in clusters])
+        for cluster in clusters:
+            if cluster in self.plotItems:
+                for item in self.plotItems[cluster]:
+                    self.waveformPlot.removeItem(item)
+                    self.xyPlot.removeItem(item)
+                    self.xzPlot.removeItem(item)
+                    self.yzPlot.removeItem(item)
+                del self.plotItems[cluster]
 
     def autoRange(self, features=True, waveforms=True):
         if features:

@@ -4,7 +4,7 @@ import typing
 import numpy as np
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import Qt
-from gui.ClusterSelector import ClusterSelector
+from gui.ClusterSelector import ClusterSelector, ClusterTreeModel
 from gui.ChannelSelector import ChannelSelector
 from gui.FeaturesPlot import FeaturesPlot
 from spikedata import SpikeData
@@ -61,7 +61,7 @@ class MainWindow(QMainWindow):
         dock = QDockWidget("Clusters", self)
         self.clusterSelector = ClusterSelector(dock)
         iChn = self.channelSelector.currentChannel
-        self.clusterSelector.load(features=spikeFeatures[iChn], labels=spikeLabels[iChn], seed=12345+iChn)
+        self.clusterSelector.load(data=spikeData[iChn], features=spikeFeatures[iChn], labels=spikeLabels[iChn], seed=12345+iChn)
         dock.setWidget(self.clusterSelector)
         dock.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
@@ -76,9 +76,18 @@ class MainWindow(QMainWindow):
         self.channelSelector.currentIndexChanged.connect(self.onChannelChanged)
         self.channelSelector.currentIndexChanged.emit(self.channelSelector.currentIndex)
 
+        # Handle cluster color change
+        model: ClusterTreeModel = self.clusterSelector.model()
+        model.itemsRecolored.connect(self.featuresPlot.onColorChanged)
+        model.itemsCheckStateChanged.connect(self.featuresPlot.onVisibilityChanged)
+        model.itemsAdded.connect(self.featuresPlot.onClustersAdded)
+        model.itemsRemoved.connect(self.featuresPlot.onClustersRemoved)
+
     def onChannelChanged(self, i: int):
-        self.clusterSelector.load(features=self.spikeFeatures[i], labels=self.spikeLabels[i], seed=12345+i)
-        self.featuresPlot.plot(self.spikeData[i], self.spikeFeatures[i], self.clusterSelector.model().rootItem.leaves())
+        self.clusterSelector.load(data=self.spikeData[i], features=self.spikeFeatures[i], labels=self.spikeLabels[i], seed=12345+i)
+        self.featuresPlot.clear()
+        self.featuresPlot.load(self.spikeData[i], self.spikeFeatures[i])
+        self.featuresPlot.plot(self.clusterSelector.model().rootItem.leaves())
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData
