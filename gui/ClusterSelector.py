@@ -82,13 +82,11 @@ class ClusterTreeItem(ClusterItem):
 
         item = ClusterTreeItem(name)
 
-        # Remove " (group)" suffix from name
-        name = name.split(' (group)')[0]
         for i in range(len(indices)):
             if isinstance(indices[i], np.ndarray):
                 childItem = ClusterTreeItem(f"{name}-{i + 1}", indices[i])
             else:
-                childItem = ClusterTreeItem.fromIndices(f"{name}-{i + 1} (group)", indices[i])
+                childItem = ClusterTreeItem.fromIndices(f"{name}-{i + 1}", indices[i])
             item.insertChild(item.childCount(), childItem)
         return item
 
@@ -332,7 +330,7 @@ class ClusterTreeItem(ClusterItem):
         for i in range(nSubClusters):
             splitIndices.append(indices[labels == i])
 
-        item = ClusterTreeItem.fromIndices(f"{self.name} (group)", splitIndices)
+        item = ClusterTreeItem.fromIndices(f"{self.name}", splitIndices)
         item._colorRange = self._colorRange
         item._checkState = Qt.CheckState.Checked
         return item
@@ -442,16 +440,15 @@ class ClusterTreeModel(QAbstractItemModel):
 
         item: ClusterTreeItem = index.internalPointer()
         if role == Qt.ItemDataRole.DisplayRole:
+            return item.name if item.isLeaf() else f"{item.name} (group)"
+        elif role == Qt.ItemDataRole.EditRole:
             return item.name
-            # return f"{item.row() + 1} - {item.name}"
         elif role == Qt.ItemDataRole.ToolTipRole:
             return f"{item.indices.size}"
         elif role == Qt.ItemDataRole.CheckStateRole:
             return item.checkState
         elif role == Qt.ItemDataRole.UserRole:
             return item.indices
-        # elif role == Qt.ItemDataRole.FontRole:
-        #     return
         elif role == Qt.ItemDataRole.ForegroundRole:
             return item.color
         else:
@@ -462,9 +459,8 @@ class ClusterTreeModel(QAbstractItemModel):
             return False
 
         item: ClusterTreeItem = index.internalPointer()
-        if role == Qt.ItemDataRole.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole | Qt.ItemDataRole.EditRole:
             item.name = value
-            # Item
             self.dataChanged.emit(index, index, [role])
             return True
         elif role == Qt.ItemDataRole.CheckStateRole:
@@ -489,7 +485,7 @@ class ClusterTreeModel(QAbstractItemModel):
         if not index.isValid():
             return baseFlags | Qt.ItemFlag.ItemIsDropEnabled
         else:
-            return baseFlags | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled
+            return baseFlags | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled | Qt.ItemFlag.ItemIsEditable
 
     # Drag and drop
     def supportedDragActions(self):
