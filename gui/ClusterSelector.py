@@ -1,12 +1,12 @@
 from __future__ import annotations  # allows TreeItem type hint in its own constructor
 import typing
+from abc import ABC, abstractmethod
 import numpy as np
 from PyQt6.QtCore import Qt, QModelIndex, QVariant, QMimeData, QByteArray, QDataStream, QIODevice, pyqtSignal, \
-    QAbstractItemModel, QObject, QItemSelection
-from PyQt6.QtGui import QColor, QFont, QBrush, QContextMenuEvent, QAction
+    QAbstractItemModel, QItemSelection
+from PyQt6.QtGui import QColor, QContextMenuEvent, QAction, QShortcut, QKeySequence
 from PyQt6.QtWidgets import *
 import gui
-from abc import ABC, abstractmethod
 
 
 # noinspection PyPep8Naming
@@ -798,16 +798,17 @@ class ClusterTreeModel(QAbstractItemModel):
 
 # noinspection PyPep8Naming
 class ClusterSelector(QTreeView):
+    clusterActions: dict[str, QAction]
+
     def __init__(self, parent: QWidget = None):
         super().__init__(parent=parent)
+        self.mergeAction, self.splitAction = self.createActions()
         self.setModel(ClusterTreeModel(self))
         self.setHeaderHidden(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-
-        self.mergeAction, self.splitAction = self.createContextMenuActions()
 
     # def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
     #     super().selectionChanged(selected, deselected)
@@ -821,18 +822,21 @@ class ClusterSelector(QTreeView):
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
         menu = QMenu(self)
-        menu.addAction(self.mergeAction)
-        menu.addAction(self.splitAction)
-        self.mergeAction.setEnabled(ClusterTreeModel.canMerge(self.selectedIndexes()))
-        self.splitAction.setEnabled(ClusterTreeModel.canSplit(self.selectedIndexes()))
+        menu.addActions(self._actions.values())
         menu.exec(event.globalPos())
 
-    def createContextMenuActions(self):
+    def createActions(self):
         mergeAction = QAction("Merge", self)
         mergeAction.triggered.connect(self.mergeSelected)
+        mergeAction.setShortcut(QKeySequence('Ctrl+M'))
+        self.addAction(mergeAction)
 
         splitAction = QAction("Split", self)
         splitAction.triggered.connect(self.splitSelected)
+        splitAction.setShortcut(QKeySequence('Ctrl+P'))
+        self.addAction(splitAction)
+
+        self.clusterActions = {'merge': mergeAction, 'split': splitAction}
 
         return mergeAction, splitAction
 
@@ -843,6 +847,13 @@ class ClusterSelector(QTreeView):
     def splitSelected(self):
         model: ClusterTreeModel = self.model()
         model.split(self.selectedIndexes())
+
+    def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection):
+        super().selectionChanged(selected, deselected)
+        if self.clusterActions is not None:
+            self.clusterActions['merge'].setEnabled(ClusterTreeModel.canMerge(self.selectedIndexes()))
+        if self.splitAction is not None:
+            self.clusterActions['split'].setEnabled(ClusterTreeModel.canSplit(self.selectedIndexes()))
 
 
 # noinspection PyPep8Naming
