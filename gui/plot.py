@@ -100,7 +100,7 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
         mean_curve = pg.PlotCurveItem(x=timestamps, y=mean, pen=pg.mkPen(color, width=2, style=Qt.PenStyle.SolidLine))
         QGraphicsItem.setData(mean_curve, DATA_PEN, pen)
 
-        color.setAlphaF(0.5)
+        color.setAlphaF(0.25)
         pen.setWidth(1)
         pen.setStyle(Qt.PenStyle.DotLine)
         sd_pos_curve = pg.PlotCurveItem(x=timestamps, y=mean + sd, pen=pen)
@@ -108,13 +108,13 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
         QGraphicsItem.setData(sd_pos_curve, DATA_PEN, pen)
         QGraphicsItem.setData(sd_neg_curve, DATA_PEN, pen)
 
-        pen.setStyle(Qt.PenStyle.DashLine)
+        pen.setStyle(Qt.PenStyle.DotLine)
         prct_hi_curve = pg.PlotCurveItem(x=timestamps, y=prct_hi, pen=pen)
         prct_lo_curve = pg.PlotCurveItem(x=timestamps, y=prct_lo, pen=pen)
         QGraphicsItem.setData(prct_hi_curve, DATA_PEN, pen)
         QGraphicsItem.setData(prct_lo_curve, DATA_PEN, pen)
 
-        color.setAlphaF(0.25)
+        color.setAlphaF(0.125)
         brush = pg.mkBrush(color)
         sd_fill = pg.FillBetweenItem(curve1=sd_pos_curve, curve2=sd_neg_curve, brush=brush)
         prct_fill = pg.FillBetweenItem(curve1=prct_hi_curve, curve2=prct_lo_curve, brush=brush)

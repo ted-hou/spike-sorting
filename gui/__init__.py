@@ -75,6 +75,9 @@ class ColorRange:
     def _lerp(r: typing.Sequence[float], t: float):
         return (r[1] - r[0]) * t + r[0]
 
+    @staticmethod
+    def black():
+        return ColorRange(hRange=(0.0, 0.0), sRange=(0.0, 0.0), lRange=(0.0, 0.0))
 
 # noinspection PyPep8Naming
 def randomNames(seed: int = None, count: int = 1) -> list[str]:

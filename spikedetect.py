@@ -60,7 +60,7 @@ def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_s
                    n_sigmas_reject=40.0,
                    waveform_window=(-5e-4, 5e-4), config: SpikeDetectConfig = None):
     """
-    Find waveforms. Uses scipy.signal.find_peaks for spike detection. This is 20x faster than custom python code.
+    Find waveforms. Uses scipy.signal.find_peaks for spike detection. This is 20x faster than custom python/cpython code.
 
     :param data: continuous data, either ContinuousData or numpy.ndarray with shape (n_samples, n_channels)
     :param sample_rate: sampling rate (Hz). Auto-extracted if data is ContinuousData type
@@ -138,7 +138,6 @@ def find_waveforms(data, sample_rate=None, electrode_map=None, direction=-1, n_s
             spike_data[chn].sample_indices.resize((i_waveform,), refcheck=False)
 
         spike_data[chn].timestamps = spike_data[chn].sample_indices / sample_rate
-
 
     return spike_data
 

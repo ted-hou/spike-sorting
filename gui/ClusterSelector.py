@@ -119,7 +119,7 @@ class ClusterTreeItem(ClusterItem):
         else:
             # Recombine indices from children if marked dirty
             if self.dirty:
-                size = self.size()
+                size = self.size
                 self._cachedIndices = np.empty((size,), dtype=np.uint32)
                 i = 0
                 for child in self._children:
@@ -142,13 +142,14 @@ class ClusterTreeItem(ClusterItem):
     def dirty(self, value: bool):
         self._dirty = value
 
+    @property
     def size(self) -> int:
         if self.childCount() == 0:
-            return self._indices.size
+            return self._indices.size if self._indices is not None else 0
         else:
             count = 0
             for child in self._children:
-                count += child.size()
+                count += child.size
             return count
 
     @property
@@ -285,6 +286,18 @@ class ClusterTreeItem(ClusterItem):
         return items
 
     @staticmethod
+    def containsDirectDescendants(items: typing.Iterable[ClusterTreeItem]):
+        """Check if any item in the list is a direct descendant of another item in the list."""
+        # We'll do this by checking if an item's parent, or grandparent, or great grandparent... are also in the list.
+        for item in items:
+            parent = item.parent
+            while parent is not None:
+                if parent in items:
+                    return True
+                parent = parent.parent
+        return False
+
+    @staticmethod
     def merge(items: list[ClusterTreeItem], name: str):
         # ensure items in list are direct descendents/ancestors of one another
         if ClusterTreeItem.containsDirectDescendants(items):
@@ -300,12 +313,12 @@ class ClusterTreeItem(ClusterItem):
         # Pre-allocate and merge indices
         size = 0
         for item in leafItems:
-            size += item.size()
+            size += item.size
         mergedIndices = np.empty((size,), dtype=np.uint32)
         i = 0
         for item in leafItems:
-            mergedIndices[i:i+item.size()] = item.indices
-            i += item.size()
+            mergedIndices[i:i+item.size] = item.indices
+            i += item.size
 
         # Find the widest ColorRange among all items
         maxColorRange = max(items, key=lambda it: it.colorRange.width).colorRange
@@ -334,18 +347,6 @@ class ClusterTreeItem(ClusterItem):
         item._colorRange = self._colorRange
         item._checkState = Qt.CheckState.Checked
         return item
-
-    @staticmethod
-    def containsDirectDescendants(items: typing.Iterable[ClusterTreeItem]):
-        """Check if any item in the list is a direct descendant of another item in the list."""
-        # We'll do this by checking if an item's parent, or grandparent, or great grandparent... are also in the list.
-        for item in items:
-            parent = item.parent
-            while parent is not None:
-                if parent in items:
-                    return True
-                parent = parent.parent
-        return False
 
 
 # noinspection PyPep8Naming
@@ -444,7 +445,7 @@ class ClusterTreeModel(QAbstractItemModel):
         elif role == Qt.ItemDataRole.EditRole:
             return item.name
         elif role == Qt.ItemDataRole.ToolTipRole:
-            return f"{item.indices.size}"
+            return f"{item.size}"
         elif role == Qt.ItemDataRole.CheckStateRole:
             return item.checkState
         elif role == Qt.ItemDataRole.UserRole:
@@ -802,7 +803,7 @@ class ClusterSelector(QTreeView):
 
     def __init__(self, parent: QWidget = None):
         super().__init__(parent=parent)
-        self.mergeAction, self.splitAction = self.createActions()
+        self.clusterActions = self.createActions()
         self.setModel(ClusterTreeModel(self))
         self.setHeaderHidden(True)
         self.setDropIndicatorShown(True)
@@ -810,50 +811,47 @@ class ClusterSelector(QTreeView):
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
-    # def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection) -> None:
-    #     super().selectionChanged(selected, deselected)
-    #     # print([i.row() for i in selected.indexes()], [i.row() for i in deselected.indexes()])
-
     def load(self, data, features, labels, seed: int = None):
         model: ClusterTreeModel = self.model()
         model.spikeData = data
         model.spikeFeatures = features
         model.loadIndices(labelsToIndices(labels), seed=seed)
 
-    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
-        menu = QMenu(self)
-        menu.addActions(self._actions.values())
-        menu.exec(event.globalPos())
-
     def createActions(self):
         mergeAction = QAction("Merge", self)
         mergeAction.triggered.connect(self.mergeSelected)
-        mergeAction.setShortcut(QKeySequence('Ctrl+M'))
+        mergeAction.setShortcut(QKeySequence('Ctrl+G'))
         self.addAction(mergeAction)
 
         splitAction = QAction("Split", self)
         splitAction.triggered.connect(self.splitSelected)
-        splitAction.setShortcut(QKeySequence('Ctrl+P'))
+        splitAction.setShortcut(QKeySequence('Ctrl+F'))
         self.addAction(splitAction)
 
         self.clusterActions = {'merge': mergeAction, 'split': splitAction}
 
         return mergeAction, splitAction
+        clusterActions = {'merge': mergeAction, 'split': splitAction, 'unassign': unassignAction}
 
-    def mergeSelected(self):
-        model: ClusterTreeModel = self.model()
-        model.merge(self.selectedIndexes())
+        return clusterActions
 
-    def splitSelected(self):
-        model: ClusterTreeModel = self.model()
-        model.split(self.selectedIndexes())
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:
+        menu = QMenu(self)
+        menu.addActions(self.clusterActions.values())
+        menu.exec(event.globalPos())
 
     def selectionChanged(self, selected: QItemSelection, deselected: QItemSelection):
         super().selectionChanged(selected, deselected)
         if self.clusterActions is not None:
             self.clusterActions['merge'].setEnabled(ClusterTreeModel.canMerge(self.selectedIndexes()))
-        if self.splitAction is not None:
             self.clusterActions['split'].setEnabled(ClusterTreeModel.canSplit(self.selectedIndexes()))
+            self.clusterActions['unassign'].setEnabled(self.model().canUnassign(self.selectedIndexes()))
+
+    def mergeSelected(self):
+        self.model().merge(self.selectedIndexes())
+
+    def splitSelected(self):
+        self.model().split(self.selectedIndexes())
 
 
 # noinspection PyPep8Naming
