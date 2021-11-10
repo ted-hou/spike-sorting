@@ -828,11 +828,7 @@ class ClusterSelector(QTreeView):
         splitAction.setShortcut(QKeySequence('Ctrl+F'))
         self.addAction(splitAction)
 
-        self.clusterActions = {'merge': mergeAction, 'split': splitAction}
-
-        return mergeAction, splitAction
-        clusterActions = {'merge': mergeAction, 'split': splitAction, 'unassign': unassignAction}
-
+        clusterActions = {'merge': mergeAction, 'split': splitAction}
         return clusterActions
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
@@ -845,7 +841,6 @@ class ClusterSelector(QTreeView):
         if self.clusterActions is not None:
             self.clusterActions['merge'].setEnabled(ClusterTreeModel.canMerge(self.selectedIndexes()))
             self.clusterActions['split'].setEnabled(ClusterTreeModel.canSplit(self.selectedIndexes()))
-            self.clusterActions['unassign'].setEnabled(self.model().canUnassign(self.selectedIndexes()))
 
     def mergeSelected(self):
         self.model().merge(self.selectedIndexes())
