@@ -1,7 +1,5 @@
 import unittest
-import numpy as np
-from continuousdata import BlackrockContinuousData
-from spikesorting import *
+from spikeclustering import *
 
 
 class TestReorderClusters(unittest.TestCase):

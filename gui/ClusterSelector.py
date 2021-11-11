@@ -334,7 +334,7 @@ class ClusterTreeItem(ClusterItem):
         :param n: number of clusters
         :return: ClusterTreeItem containing all sub-clusters as child items
         """
-        from spikesorting import cluster
+        from spikeclustering import cluster
         labels = cluster(data.features[self.indices, :], n_clusters=n, method=method)
         nSubClusters = labels.max(initial=-1) + 1
 

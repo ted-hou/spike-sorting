@@ -1,7 +1,8 @@
 import numpy as np
 from continuousdata import BlackrockContinuousData, ContinuousData
 import spikedetect
-from spikesorting import extract_features, cluster
+from spikefeatures import extract_features
+from spikeclustering import cluster
 from PyQt6.QtWidgets import QApplication
 from gui.MainWindow import MainWindow
 
