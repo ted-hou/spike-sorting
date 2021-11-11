@@ -1,12 +1,7 @@
-import typing
-
-import pyqtgraph as pg
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import *
 from pyqtgraph import ViewBox
-from gui.pyqtgraph_utils import linkAxes
-from gui.plot import *
-from gui.ClusterSelector import ClusterItem
+from gui.features.pyqtgraph_utils import linkAxes
+from gui.features.plot import *
+from gui.cluster.item import ClusterItem
 from spikedata import SpikeData
 from spikefeatures import SpikeFeatures
 

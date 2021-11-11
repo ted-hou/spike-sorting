@@ -4,7 +4,7 @@ import spikedetect
 from spikefeatures import extract_features
 from spikeclustering import cluster
 from PyQt6.QtWidgets import QApplication
-from gui.MainWindow import MainWindow
+from gui import start_app
 
 if __name__ == '__main__':
     # Read continuous data
@@ -22,7 +22,4 @@ if __name__ == '__main__':
     spike_features = extract_features(spike_data, ndims=5, method='haar')
     spike_labels = cluster(spike_features, n_clusters=3, method='kmeans')
 
-    app = QApplication([])
-    window = MainWindow(spike_data, spike_features, spike_labels)
-    window.show()
-    app.exec()
+    app = start_app(spike_data, spike_features, spike_labels)

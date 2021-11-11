@@ -5,9 +5,9 @@ import numpy as np
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import *
 from PyQt6.QtCore import Qt
-from gui.ClusterSelector import ClusterSelector, ClusterTreeModel
-from gui.ChannelSelector import ChannelSelector
-from gui.FeaturesPlot import FeaturesPlot
+from gui.cluster.view import ClusterSelector
+from gui.channel import ChannelSelector
+from gui.features import FeaturesPlot
 from spikedata import SpikeData
 from spikefeatures import SpikeFeatures
 
@@ -74,7 +74,7 @@ class MainWindow(QMainWindow):
         self.channelSelector.currentIndexChanged.emit(self.channelSelector.currentIndex)
 
         # Handle cluster color change
-        model: ClusterTreeModel = self.clusterSelector.model()
+        model = self.clusterSelector.model()
         model.itemsRecolored.connect(self.featuresPlot.onColorChanged)
         model.itemsCheckStateChanged.connect(self.featuresPlot.onVisibilityChanged)
         model.itemsAdded.connect(self.featuresPlot.onClustersAdded)
@@ -133,10 +133,12 @@ class MainWindow(QMainWindow):
         return toolbar
 
 
-def start_app():
+def start_app(*args):
     app = QApplication(sys.argv)
 
-    window = MainWindow()
+    window = MainWindow(*args)
     window.show()
 
     app.exec()
+
+    return app

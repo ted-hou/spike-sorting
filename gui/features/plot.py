@@ -1,12 +1,11 @@
 import typing
 import numpy as np
 import pyqtgraph as pg
-# from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import *
-from PyQt6.QtGui import QColor, QBrush, QPen
+from PyQt6.QtGui import QColor
 import gui
-from gui.pyqtgraph_utils import MultiCurvePlotItem
+from gui.features.pyqtgraph_utils import MultiCurvePlotItem
 from spikedata import SpikeData
 from spikefeatures import SpikeFeatures
 
