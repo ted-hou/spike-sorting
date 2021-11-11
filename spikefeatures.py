@@ -27,7 +27,6 @@ class SpikeFeatures(ABC):
         return data
 
 
-
 class SpikeFeaturesPCA(SpikeFeatures):
     pass
 

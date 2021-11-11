@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import Qt
 from gui.cluster.view import ClusterSelector
 from gui.channel import ChannelSelector
-from gui.features import FeaturesPlot
+from gui.feature import FeaturesPlot
 from spikedata import SpikeData
 from spikefeatures import SpikeFeatures
 
