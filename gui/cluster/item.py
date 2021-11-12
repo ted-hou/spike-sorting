@@ -21,6 +21,11 @@ class ClusterItem(ABC):
 
     @property
     @abstractmethod
+    def unassignedIndices(self) -> np.ndarray:
+        ...
+
+    @property
+    @abstractmethod
     def color(self) -> QColor:
         ...
 
@@ -59,6 +64,7 @@ class ClusterTreeItem(ClusterItem):
     _checkState: Qt.CheckState = Qt.CheckState.Checked
     _indices: np.ndarray | None
     _cachedIndices: np.ndarray | None
+    _unassignedIndices: np.ndarray | None
     _dirty: bool
     _colorRange: ColorRange
 
@@ -70,6 +76,7 @@ class ClusterTreeItem(ClusterItem):
         self._parent = None
         self._indices = indices
         self._cachedIndices = None
+        self._unassignedIndices = None
         self._dirty = True
         self._colorRange = ColorRange() if colorRange is None else colorRange
 
@@ -130,6 +137,29 @@ class ClusterTreeItem(ClusterItem):
     @indices.setter
     def indices(self, value: np.ndarray):
         self._indices = value
+
+    @property
+    def unassignedIndices(self) -> np.ndarray:
+        return self._unassignedIndices
+
+    @property
+    def unassignedSize(self) -> int:
+        if self._unassignedIndices is None:
+            return 0
+        else:
+            return self._unassignedIndices.size
+
+    def addUnassignedIndices(self, indices: np.ndarray) -> np.ndarray:
+        if self._unassignedIndices is None:
+            self._unassignedIndices = indices.copy()
+        else:
+            self._unassignedIndices = np.unique(np.append(self._unassignedIndices, indices))
+        return self._unassignedIndices
+
+    def clearUnassignedIndices(self) -> np.ndarray:
+        value = self._unassignedIndices
+        self._unassignedIndices = None
+        return value
 
     @property
     def dirty(self) -> bool:

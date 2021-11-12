@@ -3,7 +3,7 @@ import typing
 from PyQt6.QtCore import QAbstractItemModel, pyqtSignal, QModelIndex, Qt, QVariant, QMimeData, QByteArray, QDataStream, \
     QIODevice
 from PyQt6.QtWidgets import QWidget
-from . import ClusterTreeItem
+from .item import ClusterTreeItem
 
 
 # noinspection PyPep8Naming
@@ -90,7 +90,7 @@ class ClusterTreeModel(QAbstractItemModel):
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = None):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return self.rootItem.name
+            return f"{self.rootItem.size} classified, {self.rootItem.unassignedSize} unassigned"
         return QVariant()
 
     def data(self, index: QModelIndex, role=None):
@@ -242,6 +242,7 @@ class ClusterTreeModel(QAbstractItemModel):
             return False
 
         self.removeInvalidChildren()
+        self.removeRedundantParents()
         self.recolorChildItems(self.rootItem)
 
         # Refresh CheckState (for visual update only)
@@ -323,7 +324,7 @@ class ClusterTreeModel(QAbstractItemModel):
             self.itemsRecolored.emit(item.children())
 
     def removeInvalidChildren(self, parentIndex: QModelIndex = QModelIndex()):
-        """Recursively remove invalid ClusterTreeItem's from model."""
+        """Recursively remove invalid (childless groups/leaves with empty cluster indices) ClusterTreeItem's from model."""
         i = 0
         parentItem = parentIndex.internalPointer() if parentIndex.isValid() else self.rootItem
         while parentItem.childCount() > i:
@@ -334,6 +335,30 @@ class ClusterTreeModel(QAbstractItemModel):
                 i += 1
             else:
                 self.removeItem(i, parentIndex)
+
+    def removeRedundantParents(self, index: QModelIndex = None) -> QModelIndex:
+        if index is None:
+            for leaf in self.leafIndices():
+                self.removeRedundantParents(leaf)
+            return
+
+        """Recursively replace single-child parents with its (single) child. Returns new index."""
+        if not index.isValid():
+            return index
+
+        # Find top-most single-parent
+        parentIndex = index
+        while parentIndex.parent().isValid() and self.rowCount(parentIndex.parent()) == 1:
+            parentIndex = parentIndex.parent()
+
+        if parentIndex == index:
+            return index
+
+        row = parentIndex.row()
+        grandparentIndex = parentIndex.parent()
+
+        self.removeItem(row, grandparentIndex)
+        self.insertItem(row, index.internalPointer(), grandparentIndex)
 
     def pathToIndex(self, path: list[int]) -> QModelIndex:
         if len(path) == 0:
@@ -384,36 +409,59 @@ class ClusterTreeModel(QAbstractItemModel):
         maxDepth = max([ClusterTreeModel.indexDepth(index) for index in indices])
         indices.sort(key=lambda index: ClusterTreeModel.pathOrder(ClusterTreeModel.indexToPath(index), maxDepth), reverse=reverse)
 
-    @staticmethod
-    def canMerge(indices: typing.Sequence[QModelIndex]) -> bool:
+    def leafIndices(self, index: typing.Iterable[QModelIndex] | QModelIndex = QModelIndex()) -> list[QModelIndex]:
+        """
+        Recursively fetch all child indices that are leaf nodes in the tree (i.e. childless). If provided index is a leaf index, it will be the only item returned.
+        :param index: QModelIndex, or list[QModelIndex].
+        """
+        if isinstance(index, QModelIndex):
+            childCount = self.rowCount(index)
+            if childCount == 0:
+                return [index]
+            leaves = []
+            for i in range(childCount):
+                leaves.extend(self.leafIndices(self.index(i, 0, index)))
+            return leaves
+        else:
+            indices = set()
+            [indices.update(self.leafIndices(idx)) for idx in index]
+            return list(indices)
+
+    def canMerge(self, indices: typing.Sequence[QModelIndex]) -> bool:
+        """List should not (partially) contain descendants, unless all descendants are in the list."""
         if len(indices) <= 1:
             return False
 
-        # Check if list contains direct descendants of any other item in list
+        # Check if list contains (some, but not all) direct descendants of any other item in list
         for index in indices:
             parentIndex = index.parent()
             while parentIndex.isValid():
+                # If a parent is in the list, then all its children must be in the list
                 if parentIndex in indices:
-                    return False
+                    for i in range(self.rowCount(parentIndex)):
+                        if self.index(i, 0, parentIndex) not in indices:
+                            return False
                 parentIndex = parentIndex.parent()
         return True
 
     def merge(self, indices: list[QModelIndex]) -> bool:
         """Merge indices in list, and replace the shallowest item with the merged item. If a branch item is listed, all its leaves will be merged."""
-        if not ClusterTreeModel.canMerge(indices):
+        if not self.canMerge(indices):
             return False
 
+        # Convert indices to their leaves
+        indices = self.leafIndices(indices)
+
         # Sort indices from bottom to top
-        indices = indices.copy()
         ClusterTreeModel.sortIndices(indices, reverse=True)
 
-        # Find shallowest index, this will be replaced by the merged index
-        shallowestIndex = indices[-1]
-        targetParentIndex = shallowestIndex.parent()
-        targetRow = shallowestIndex.row()
+        # Find topmost index, this will be replaced by the merged index
+        topIndex = indices[-1]
+        targetParentIndex = topIndex.parent()
+        targetRow = topIndex.row()
 
         # Generate merged item
-        mergedItems = ClusterTreeItem.merge([index.internalPointer() for index in indices], name='+'.join([idx.internalPointer().name for idx in indices][::-1]))#, name=shallowestIndex.internalPointer().name)
+        mergedItem = ClusterTreeItem.merge([index.internalPointer() for index in indices], name='+'.join([idx.internalPointer().name for idx in indices][::-1]))#, name=shallowestIndex.internalPointer().name)
 
         # Remove merged items
         for index in indices:
@@ -423,22 +471,22 @@ class ClusterTreeModel(QAbstractItemModel):
                 raise RuntimeError(f"Failed to remove item at row {row} for parent path {self.indexToPath(parentIndex)}")
 
         # Insert merged item
-        if not self.insertItem(targetRow, mergedItems, targetParentIndex):
+        if not self.insertItem(targetRow, mergedItem, targetParentIndex):
             raise RuntimeError(f"Failed to insert item at row {targetRow} for parent path {self.indexToPath(targetParentIndex)}")
 
         # Remove invalid children
         self.removeInvalidChildren()
+        self.removeRedundantParents()
         self.recolorChildItems(self.rootItem)
         return True
 
-    @staticmethod
-    def canSplit(indices: list[QModelIndex]) -> bool:
+    def canSplit(self, indices: list[QModelIndex]) -> bool:
         """Only non-root, leaf nodes can be split."""
         return all([index.isValid() and index.internalPointer().isLeaf() for index in indices])
 
     def split(self, indices: list[QModelIndex], method='kmeans', n=3) -> bool:
         """Split each item into a specified number of sub-clusters."""
-        if not ClusterTreeModel.canSplit(indices):
+        if not self.canSplit(indices):
             return False
 
         for index in indices:
@@ -449,8 +497,38 @@ class ClusterTreeModel(QAbstractItemModel):
             self.removeItem(row, parentIndex)
             self.insertItem(row, newItem, parentIndex)
             self.recolorChildItems(newItem)
-            # newIndex = self.index(row, 0, parentIndex)
-            # self.beginInsertRows(newIndex, 0, newItem.childCount() - 1)
-            # self.endInsertRows()
+
+        return True
+
+    def canUnassign(self, indices: list[QModelIndex]) -> bool:
+        return len(indices) == 1 or self.canMerge(indices)
+
+    def unassign(self, indices: list[QModelIndex]) -> bool:
+        """Un-assign indices from clusters."""
+        if not self.canUnassign(indices):
+            return False
+
+        # Convert indices to leaves
+        indices = self.leafIndices(indices)
+
+        # Sort indices from bottom to top
+        ClusterTreeModel.sortIndices(indices, reverse=True)
+
+        # Create a merged item, this should contain all deleted indices
+        mergedItem = ClusterTreeItem.merge([index.internalPointer() for index in indices], name='unassigned')
+        # Add deleted indices to root item
+        self.rootItem.addUnassignedIndices(mergedItem.indices)
+
+        # Remove merged items
+        for index in indices:
+            parentIndex = index.parent()
+            row = index.row()
+            if self.removeItem(row, parentIndex) is None:
+                raise RuntimeError(f"Failed to remove item at row {row} for parent path {self.indexToPath(parentIndex)}")
+
+        # Remove invalid/redundant items
+        self.removeInvalidChildren()
+        self.removeRedundantParents()
+        self.recolorChildItems(self.rootItem)
 
         return True
