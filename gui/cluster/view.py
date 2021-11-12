@@ -32,7 +32,7 @@ class ClusterSelector(QTreeView):
     def createActions(self):
         mergeAction = QAction("Merge", self)
         mergeAction.triggered.connect(self.mergeSelected)
-        mergeAction.setShortcut(QKeySequence('Ctrl+M'))
+        mergeAction.setShortcut(QKeySequence('Ctrl+G'))
         self.addAction(mergeAction)
 
         splitAction = QAction("Split", self)

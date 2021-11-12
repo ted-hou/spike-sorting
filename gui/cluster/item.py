@@ -41,12 +41,10 @@ class ClusterItem(ABC):
         return False
 
     def __eq__(self, other):
-        return self.name == other.name
-        # return np.array_equal(self.indices, other.indices)
+        return np.array_equal(self.indices, other.indices)
 
     def __hash__(self):
-        return hash(self.name)
-        # return hash(self.indices.tobytes())
+        return hash(self.indices.tobytes())
 
     def __ne__(self, other):
         return not(self == other)
