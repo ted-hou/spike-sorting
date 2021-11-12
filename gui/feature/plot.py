@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QColor
 import gui
-from gui.feature.pyqtgraph_utils import MultiCurvePlotItem
+from gui.feature.multicurve import MultiCurvePlotItem
 from spikedata import SpikeData
 from spikefeatures import SpikeFeatures
 

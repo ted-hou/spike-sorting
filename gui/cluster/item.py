@@ -21,6 +21,11 @@ class ClusterItem(ABC):
 
     @property
     @abstractmethod
+    def size(self) -> int:
+        ...
+
+    @property
+    @abstractmethod
     def unassignedIndices(self) -> np.ndarray:
         ...
 
@@ -48,6 +53,9 @@ class ClusterItem(ABC):
 
     def __ne__(self, other):
         return not(self == other)
+
+    def __str__(self):
+        return f"{self.name} ({self.size})"
 
 
 # noinspection PyPep8Naming
@@ -77,6 +85,9 @@ class ClusterTreeItem(ClusterItem):
         self._unassignedIndices = None
         self._dirty = True
         self._colorRange = ColorRange() if colorRange is None else colorRange
+
+    def __str__(self):
+        return f"{self.name} ({self.size}) ({'branch' if self.isBranch() else 'leaf'})"
 
     @staticmethod
     def fromIndices(name: str, indices: list) -> ClusterTreeItem:
@@ -134,7 +145,23 @@ class ClusterTreeItem(ClusterItem):
 
     @indices.setter
     def indices(self, value: np.ndarray):
+        """Set the spikeIndices array. Please only do so for leaf items. Automatically marks item as dirty, so that
+        parent items update their indices when accessed."""
         self._indices = value
+        self.dirty = True
+
+    def removeIndices(self, value: np.ndarray):
+        if self._indices is not None:
+            self.indices = self._indices[np.invert(np.isin(self._indices, value))]
+
+    def addIndices(self, value: np.ndarray, skipUnique=False):
+        if self._indices is None:
+            self.indices = value
+        else:
+            newIndices = np.append(self._indices, value)
+            if not skipUnique:
+                newIndices = np.unique(newIndices)
+            self.indices = newIndices
 
     @property
     def unassignedIndices(self) -> np.ndarray:
@@ -161,7 +188,8 @@ class ClusterTreeItem(ClusterItem):
 
     @property
     def dirty(self) -> bool:
-        """True if indices needs updating. This is flagged when a child item is added or removed"""
+        """True if indices needs updating. This is flagged when a child item is added or removed, or when indices are
+        edited."""
         return self._dirty or any([child.dirty for child in self._children])
 
     @dirty.setter
@@ -259,7 +287,7 @@ class ClusterTreeItem(ClusterItem):
         for item in items:
             item.parent = self
         self.indices = None
-        self.dirty = True
+        # self.dirty = True  # Moved to indices.setter
 
     def removeChildren(self, row: int, count: int) -> typing.Sequence[ClusterTreeItem]:
         for c in self._children[row:row + count]:
@@ -267,7 +295,7 @@ class ClusterTreeItem(ClusterItem):
         items = self._children[row:row + count]
         del self._children[row:row + count]
         self.indices = None
-        self.dirty = True
+        # self.dirty = True  # Moved to indices.setter
         return items
 
     def insertChild(self, row: int, item: ClusterTreeItem):

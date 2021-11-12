@@ -1,9 +1,12 @@
-from pyqtgraph import ViewBox
-from gui.feature.pyqtgraph_utils import linkAxes
-from gui.feature.plot import *
-from gui.cluster.item import ClusterItem
+from PyQt6.QtGui import QPen, QKeyEvent, QKeySequence
+from pyqtgraph.GraphicsScene.mouseEvents import MouseClickEvent
+from PyQt6.QtCore import QPointF
 from spikedata import SpikeData
 from spikefeatures import SpikeFeatures
+from .linkaxes import linkAxes
+from .plot import *
+from ..cluster.item import ClusterItem
+from .roi import PolygonROI
 
 
 # noinspection PyPep8Naming
@@ -15,6 +18,7 @@ class FeaturesPlot(QWidget):
     plotItems: dict[ClusterItem, list[QGraphicsItem]]
     data: SpikeData = None
     features: SpikeFeatures = None
+    roi: PolygonROI = None
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,25 +34,34 @@ class FeaturesPlot(QWidget):
         # Create layout for 3 plots (waveform, features xy, features xz, features yz)
         # dock = QDockWidget("Waveform features", self)
         layout = QGridLayout()
-        pw = pg.PlotWidget()
-        self.waveformPlot = pw.getPlotItem()
-        layout.addWidget(pw, 0, 1)
-        pw = pg.PlotWidget()
-        self.xyPlot = pw.getPlotItem()
-        layout.addWidget(pw, 0, 0)
-        pw = pg.PlotWidget()
-        self.xzPlot = pw.getPlotItem()
-        layout.addWidget(pw, 1, 0)
-        pw = pg.PlotWidget()
-        self.yzPlot = pw.getPlotItem()
-        layout.addWidget(pw, 1, 1)
+        waveformWidget = pg.PlotWidget()
+        self.waveformPlot = waveformWidget.getPlotItem()
+        layout.addWidget(waveformWidget, 0, 1)
+        xyWidget = pg.PlotWidget()
+        self.xyPlot = xyWidget.getPlotItem()
+        layout.addWidget(xyWidget, 0, 0)
+        xzWidget = pg.PlotWidget()
+        self.xzPlot = xzWidget.getPlotItem()
+        layout.addWidget(xzWidget, 1, 0)
+        yzWidget = pg.PlotWidget()
+        self.yzPlot = yzWidget.getPlotItem()
+        layout.addWidget(yzWidget, 1, 1)
         # Link x,y,z axes
         xyView = self.xyPlot.getViewBox()
         xzView = self.xzPlot.getViewBox()
         yzView = self.yzPlot.getViewBox()
-        linkAxes(xyView, yzView, ViewBox.YAxis, ViewBox.XAxis, reciprocal=True)
-        linkAxes(xyView, xzView, ViewBox.XAxis, ViewBox.XAxis, reciprocal=True)
-        linkAxes(yzView, xzView, ViewBox.YAxis, ViewBox.YAxis, reciprocal=True)
+        linkAxes(xyView, yzView, pg.ViewBox.YAxis, pg.ViewBox.XAxis, reciprocal=True)
+        linkAxes(xyView, xzView, pg.ViewBox.XAxis, pg.ViewBox.XAxis, reciprocal=True)
+        linkAxes(yzView, xzView, pg.ViewBox.YAxis, pg.ViewBox.YAxis, reciprocal=True)
+
+        xyScene: pg.GraphicsScene = self.xyPlot.scene()
+        xzScene: pg.GraphicsScene = self.xzPlot.scene()
+        yzScene: pg.GraphicsScene = self.yzPlot.scene()
+
+        xyScene.sigMouseClicked.connect(self.onPlotClicked)
+        xzScene.sigMouseClicked.connect(self.onPlotClicked)
+        yzScene.sigMouseClicked.connect(self.onPlotClicked)
+
         self.setLayout(layout)
 
     def clear(self):
@@ -100,8 +113,8 @@ class FeaturesPlot(QWidget):
         for cluster in clusters:
             if cluster in self.plotItems:
                 for item in self.plotItems[cluster]:
-                    pen: QPen = QGraphicsObject.data(item, DATA_PEN)
-                    brush: QBrush = QGraphicsObject.data(item, DATA_BRUSH)
+                    pen = QGraphicsObject.data(item, DATA_PEN)
+                    brush = QGraphicsObject.data(item, DATA_BRUSH)
                     color = cluster.color
                     if pen is not None:
                         color.setAlpha(pen.color().alpha())
@@ -137,4 +150,25 @@ class FeaturesPlot(QWidget):
         if waveforms:
             self.waveformPlot.autoRange()
 
+    def onPlotClicked(self, ev: MouseClickEvent):
+        # Ctrl+LClick -> make new ROI
+        if self.roi is None and ev.button() == Qt.MouseButton.LeftButton and ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            vb = ev.currentItem
+            if not isinstance(vb, pg.ViewBox):
+                vb = vb.getViewBox()
+            self.roi = self.createROI(ev.scenePos(), vb)
+            ev.accept()
+        else:
+            ev.ignore()
+
+    def createROI(self, pos: pg.Point, vb: pg.ViewBox) -> PolygonROI:
+        pen = QPen(QColor('Black'))
+        roi = PolygonROI([vb.mapSceneToView(pos), vb.mapSceneToView(pos)], vb.scene(), pen=pen, handlePen=pen)
+        vb.addItem(roi)
+        roi.startDrawing()
+        return roi
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if event.key() == Qt.Key.Key_Return and self.roi is not None:
+            self.roi.completeDrawing()
 
