@@ -99,7 +99,7 @@ class ClusterTreeModel(QAbstractItemModel):
 
         item: ClusterTreeItem = index.internalPointer()
         if role == Qt.ItemDataRole.DisplayRole:
-            return item.name if item.isLeaf() else f"{item.name} (group)"
+            return f"{item.name} ({item.size})" if item.isLeaf() else f"{item.name} ({item.size}, group)"
         elif role == Qt.ItemDataRole.EditRole:
             return item.name
         elif role == Qt.ItemDataRole.ToolTipRole:
