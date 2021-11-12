@@ -532,3 +532,19 @@ class ClusterTreeModel(QAbstractItemModel):
         self.recolorChildItems(self.rootItem)
 
         return True
+
+    def canRestoreUnassigned(self) -> bool:
+        return self.rootItem.unassignedSize > 0
+
+    def restoreUnassigned(self) -> bool:
+        """Restore unassigned indices by making a new cluster item for them."""
+        if not self.canRestoreUnassigned():
+            return False
+
+        item = ClusterTreeItem('Restored', indices=self.rootItem.unassignedIndices)
+        self.rootItem.clearUnassignedIndices()
+
+        self.insertItem(self.rowCount(), item)
+        self.recolorChildItems(self.rootItem)
+
+        return True

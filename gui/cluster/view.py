@@ -45,7 +45,11 @@ class ClusterSelector(QTreeView):
         unassignAction.setShortcut(QKeySequence.StandardKey.Delete)
         self.addAction(unassignAction)
 
-        clusterActions = {'merge': mergeAction, 'split': splitAction, 'unassign': unassignAction}
+        restoreUnassignedAction = QAction("Restore unassigned", self)
+        restoreUnassignedAction.triggered.connect(self.restoreUnassigned)
+        self.addAction(restoreUnassignedAction)
+
+        clusterActions = {'merge': mergeAction, 'split': splitAction, 'unassign': unassignAction, 'restoreUnassigned': restoreUnassignedAction}
         return clusterActions
 
     def contextMenuEvent(self, event: QContextMenuEvent) -> None:
@@ -59,6 +63,7 @@ class ClusterSelector(QTreeView):
             self.clusterActions['merge'].setEnabled(self.model().canMerge(self.selectedIndexes()))
             self.clusterActions['split'].setEnabled(self.model().canSplit(self.selectedIndexes()))
             self.clusterActions['unassign'].setEnabled(self.model().canUnassign(self.selectedIndexes()))
+            self.clusterActions['restoreUnassigned'].setEnabled(self.model().canRestoreUnassigned())
 
     def mergeSelected(self):
         self.model().merge(self.selectedIndexes())
@@ -68,3 +73,6 @@ class ClusterSelector(QTreeView):
 
     def unassignSelected(self):
         self.model().unassign(self.selectedIndexes())
+
+    def restoreUnassigned(self):
+        self.model().restoreUnassigned()
