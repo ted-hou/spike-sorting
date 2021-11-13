@@ -1,12 +1,14 @@
-from PyQt6.QtGui import QPen, QKeyEvent, QKeySequence
+from __future__ import annotations
+
+import numpy as np
+from PyQt6.QtGui import QPen, QKeyEvent
+from PyQt6.QtCore import pyqtSignal
 from pyqtgraph.GraphicsScene.mouseEvents import MouseClickEvent
-from PyQt6.QtCore import QPointF
-from spikedata import SpikeData
-from spikefeatures import SpikeFeatures
+
 from .linkaxes import linkAxes
 from .plot import *
-from ..cluster.item import ClusterItem
 from .roi import PolygonROI
+from ..cluster.item import ClusterItem
 
 
 # noinspection PyPep8Naming
@@ -19,6 +21,10 @@ class FeaturesPlot(QWidget):
     data: SpikeData = None
     features: SpikeFeatures = None
     roi: PolygonROI = None
+    selection: np.ndarray = None
+    selectionChanged = pyqtSignal(np.ndarray)
+
+    _cachedClusters = None
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -70,9 +76,10 @@ class FeaturesPlot(QWidget):
         self.xzPlot.clear()
         self.yzPlot.clear()
 
-    def plot(self, clusters: typing.Sequence[ClusterItem], data: SpikeData = None, features: SpikeFeatures = None):
+    def plot(self, clusters: typing.Sequence[ClusterItem], selection: np.ndarray = None, data: SpikeData = None, features: SpikeFeatures = None):
         data = self.data if data is None else data
         features = self.features if features is None else features
+        self._cachedClusters = clusters
 
         indices = [cluster.indices for cluster in clusters]
         colors = [cluster.color for cluster in clusters]
@@ -81,15 +88,15 @@ class FeaturesPlot(QWidget):
         plotItemsList = [self.plotItems[cluster] if cluster in self.plotItems else [] for cluster in clusters]
 
         if data is not None:
-            _, waveformItems = plot_waveforms(data, indices=indices, colors=colors, plt=self.waveformPlot, mode='mean')
+            _, waveformItems = plot_waveforms(data, indices=indices, selection=selection, colors=colors, plt=self.waveformPlot, mode='mean')
             self.autoRange(features=False, waveforms=True)
             for i in range(len(plotItemsList)):
                 plotItemsList[i].extend(waveformItems[i])
             # self.plotItems.update(zip(spikeClusters, waveformItems))
         if features is not None:
-            _, xyItems = plot_features(features, dims='xy', indices=indices, colors=colors, plt=self.xyPlot)
-            _, xzItems = plot_features(features, dims='xz', indices=indices, colors=colors, plt=self.xzPlot)
-            _, yzItems = plot_features(features, dims='yz', indices=indices, colors=colors, plt=self.yzPlot)
+            _, xyItems = plot_features(features, dims='xy', indices=indices, selection=selection, colors=colors, plt=self.xyPlot)
+            _, xzItems = plot_features(features, dims='xz', indices=indices, selection=selection, colors=colors, plt=self.xzPlot)
+            _, yzItems = plot_features(features, dims='yz', indices=indices, selection=selection, colors=colors, plt=self.yzPlot)
             self.autoRange(features=True, waveforms=False)
             for i in range(len(plotItemsList)):
                 plotItemsList[i].extend(xyItems[i])
@@ -168,7 +175,43 @@ class FeaturesPlot(QWidget):
         roi.startDrawing()
         return roi
 
+    def deleteROI(self):
+        if self.roi is not None:
+            self.roi.getViewBox().removeItem(self.roi)
+            self.roi = None
+
+    def selectFromROI(self, roi: PolygonROI):
+        if roi is not None:
+            if roi.getViewBox() is self.xyPlot.getViewBox():
+                points = self.features.features[:, (0, 1)]
+            elif roi.getViewBox() is self.xzPlot.getViewBox():
+                points = self.features.features[:, (0, 2)]
+            elif roi.getViewBox() is self.yzPlot.getViewBox():
+                points = self.features.features[:, (1, 2)]
+            else:
+                raise RuntimeError(f"ROI has invalid viewbox {roi.getViewBox()}.")
+            selection = roi.contains_points(points)
+            self.onSelectionChanged(selection)
+
+    def onSelectionChanged(self, selection):
+        self.selection = selection
+        from .plot import _plot_waveforms
+        self.clear()
+        self.plot(clusters=self._cachedClusters, selection=self.selection)
+        # plot_features()
+        # _plot_waveforms(self.waveformPlot, self.data.waveforms[selection, :], self.data.waveform_timestamps, QColor('black'), mode='mean')
+
+
+        self.selectionChanged.emit(selection)
+
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Return and self.roi is not None:
-            self.roi.completeDrawing()
-
+            # Fisrt press: Finish adding points, user can still move vertices after this
+            if not self.roi.completed:
+                self.roi.completeDrawing()
+                self.selectFromROI(self.roi)
+                self.roi.sigRegionChanged.connect(self.selectFromROI)
+            # Second press: finalize selection and delete roi
+            else:
+                self.roi.sigRegionChanged.disconnect(self.selectFromROI)
+                self.deleteROI()

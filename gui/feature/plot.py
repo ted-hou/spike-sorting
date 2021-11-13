@@ -18,7 +18,7 @@ DATA_BRUSH = 1
 
 
 def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray = None,
-                   indices: list[np.ndarray] = None, colors: list[QColor] = None, mode='mean', yrange=None, prct=5):
+                   indices: list[np.ndarray] = None, selection: np.ndarray = None, colors: list[QColor] = None, mode='mean', yrange=None, prct=5):
     """
     Plot waveforms from spike data.
 
@@ -35,9 +35,11 @@ def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray =
     plt.setLabel('left', text=f'amplitude ({spike_data.waveform_units})')
     plt.setLabel('bottom', text='time', units='s')
 
+    # TODO: implement selection mask for the first 2 "if" conditions.
     if labels is None and indices is None:
         waveforms = spike_data.waveforms * spike_data.waveform_conversion_factor
         items = [_plot_waveforms(plt, waveforms, spike_data.waveform_timestamps, color='k', mode=mode, prct=prct)]
+    # TODO: implement selection mask for the first 2 "if" conditions.
     elif labels is not None:
         items = []
         for i_cluster in range(np.max(labels)+1):
@@ -48,7 +50,11 @@ def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray =
     elif indices is not None:
         items = []
         for i_cluster in range(len(indices)):
-            waveforms = spike_data.waveforms[indices[i_cluster]] * spike_data.waveform_conversion_factor
+            if selection is None:
+                this_selection = indices[i_cluster]
+            else:
+                this_selection = np.intersect1d(indices[i_cluster], np.where(selection))
+            waveforms = spike_data.waveforms[this_selection, :] * spike_data.waveform_conversion_factor
             color = gui.default_color(i_cluster) if colors is None else colors[i_cluster]
             itemsInCluster = _plot_waveforms(plt, waveforms=waveforms, timestamps=spike_data.waveform_timestamps,
                                              color=color, mode=mode, prct=prct)
@@ -134,7 +140,7 @@ def _plot_waveforms(plt: pg.PlotItem, waveforms: np.ndarray, timestamps: np.ndar
 
 
 def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.ndarray = None,
-                  indices: list[np.ndarray] = None, colors: list[QColor] = None,
+                  indices: list[np.ndarray] = None, selection: np.ndarray = None, colors: list[QColor] = None,
                   dims: typing.Union[tuple, list, str] = 'xy'):
     app = _get_or_create_app()
     plt, layout, make_new_plot = _validate_or_create_plot(plt)
@@ -171,12 +177,14 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
                 raise ValueError(f"dims[{i}] = {dims[i]} exceeds feature space dimensions [0, {spike_features.ndims}]")
 
     items = []
+    # TODO: implement selection mask for the first 2 "if" conditions.
     if labels is None and indices is None:
         features = spike_features.features[:, dims]
         color = pg.mkColor('k')
         scatter = pg.ScatterPlotItem(pos=features, pen=pg.mkPen(color), brush=pg.mkBrush(color), size=2)
         plt.addItem(scatter)
         items.append([scatter])
+    # TODO: implement selection mask for the first 2 "if" conditions.
     elif labels is not None:
         for i_cluster in range(np.max(labels)+1):
             features = spike_features.features[labels == i_cluster, :][:, dims]
@@ -184,7 +192,11 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
             _plot_features_single_cluster(color, features, items, plt)
     elif indices is not None:
         for i_cluster in range(len(indices)):
-            features = spike_features.features[indices[i_cluster], :][:, dims]
+            if selection is None:
+                this_selection = indices[i_cluster]
+            else:
+                this_selection = np.intersect1d(indices[i_cluster], np.where(selection))
+            features = spike_features.features[this_selection, :][:, dims]
             color = colors[i_cluster]
             _plot_features_single_cluster(color, features, items, plt)
 

@@ -1,9 +1,10 @@
+import numpy as np
 from PyQt6.QtCore import Qt, QPointF, QRectF
 from PyQt6.QtGui import QPainterPath, QPainter
 import pyqtgraph as pg
 from pyqtgraph.GraphicsScene.mouseEvents import MouseClickEvent
 from pyqtgraph.graphicsItems.ROI import ROI, Handle, Point
-
+from matplotlib import path
 
 # noinspection PyPep8Naming
 class PolygonROI(ROI):
@@ -13,6 +14,7 @@ class PolygonROI(ROI):
     """
     _scene: pg.GraphicsScene = None
     _menuEnabled = True
+    _completed = False
 
     def __init__(self, positions, scene: pg.GraphicsScene, **args):
         super(PolygonROI, self).__init__([0, 0], [1, 1], movable=False, removable=False, **args)
@@ -21,6 +23,7 @@ class PolygonROI(ROI):
         self.setZValue(1000)
         self._scene = scene
         self._menuEnabled = True
+        self._completed = False
 
     def paint(self, p, *args):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -66,6 +69,7 @@ class PolygonROI(ROI):
 
     def startDrawing(self):
         """Start listening to sigMouseMoved and sigMouseClicked events."""
+        self._completed = False
         self._scene.sigMouseMoved.connect(self.moveLastPoint)
         self._scene.sigMouseClicked.connect(self.addOrRemovePoint)
         self._menuEnabled = self.getViewBox().menuEnabled()
@@ -78,3 +82,13 @@ class PolygonROI(ROI):
         self._scene.sigMouseClicked.disconnect(self.addOrRemovePoint)
         self.getViewBox().setMenuEnabled(self._menuEnabled)
         self.unsetCursor()
+        self._completed = True
+
+    @property
+    def completed(self) -> bool:
+        return self._completed
+
+    def contains_points(self, points: np.ndarray) -> np.ndarray:
+        p = path.Path([(hInfo['pos'].x(), hInfo['pos'].y()) for hInfo in self.handles])
+        return p.contains_points(points)
+

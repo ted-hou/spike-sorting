@@ -13,7 +13,7 @@ class SpikeData:
     electrode: int = None
     sample_rate: float = None
     sample_indices: np.ndarray
-    waveforms: np.ndarray
+    waveforms: np.ndarray  # (n_waveforms, n_samples_per_waveform)
     timestamps: np.ndarray
     waveform_timestamps: np.ndarray
     waveform_units: str = 'uV'
