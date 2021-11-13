@@ -193,16 +193,21 @@ class FeaturesPlot(QWidget):
             selection = roi.contains_points(points)
             self.onSelectionChanged(selection)
 
+    _plotRefreshInterval = 1/120 * 10e9
+    _lastPlotRefresh = 0
+
     def onSelectionChanged(self, selection):
         self.selection = selection
-        from .plot import _plot_waveforms
-        self.clear()
-        self.plot(clusters=self._cachedClusters, selection=self.selection)
-        # plot_features()
-        # _plot_waveforms(self.waveformPlot, self.data.waveforms[selection, :], self.data.waveform_timestamps, QColor('black'), mode='mean')
 
-
-        self.selectionChanged.emit(selection)
+        # Update plots
+        import time
+        t = time.time_ns()
+        if t - self._lastPlotRefresh > self._plotRefreshInterval:
+            self._lastPlotRefresh = t
+            # TODO: Recolor, rather than redoing the entire plot
+            self.clear()
+            self.plot(clusters=self._cachedClusters, selection=self.selection)
+            self.selectionChanged.emit(selection)
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key.Key_Return and self.roi is not None:

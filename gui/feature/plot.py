@@ -54,11 +54,14 @@ def plot_waveforms(spike_data: SpikeData, plt: pg.PlotItem, labels: np.ndarray =
                 this_selection = indices[i_cluster]
             else:
                 this_selection = np.intersect1d(indices[i_cluster], np.where(selection))
-            waveforms = spike_data.waveforms[this_selection, :] * spike_data.waveform_conversion_factor
-            color = gui.default_color(i_cluster) if colors is None else colors[i_cluster]
-            itemsInCluster = _plot_waveforms(plt, waveforms=waveforms, timestamps=spike_data.waveform_timestamps,
-                                             color=color, mode=mode, prct=prct)
-            items.append(itemsInCluster)
+            if this_selection.size > 0:
+                waveforms = spike_data.waveforms[this_selection, :] * spike_data.waveform_conversion_factor
+                color = gui.default_color(i_cluster) if colors is None else colors[i_cluster]
+                itemsInCluster = _plot_waveforms(plt, waveforms=waveforms, timestamps=spike_data.waveform_timestamps,
+                                                 color=color, mode=mode, prct=prct)
+                items.append(itemsInCluster)
+            else:
+                items.append([])
 
     # Set axis limits
     if isinstance(yrange, (tuple, list)):
@@ -189,16 +192,27 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
         for i_cluster in range(np.max(labels)+1):
             features = spike_features.features[labels == i_cluster, :][:, dims]
             color = gui.default_color(i_cluster)
-            _plot_features_single_cluster(color, features, items, plt)
+            scatter = _plot_features_single_cluster(features, color, plt)
+            items.append([scatter])
     elif indices is not None:
         for i_cluster in range(len(indices)):
             if selection is None:
                 this_selection = indices[i_cluster]
+                features = spike_features.features[this_selection, :][:, dims]
+                color = colors[i_cluster]
+                scatter = _plot_features_single_cluster(features, color, plt)
+                items.append([scatter])
             else:
                 this_selection = np.intersect1d(indices[i_cluster], np.where(selection))
-            features = spike_features.features[this_selection, :][:, dims]
-            color = colors[i_cluster]
-            _plot_features_single_cluster(color, features, items, plt)
+                this_not_selected = np.intersect1d(indices[i_cluster], np.where(np.invert(selection)))
+                this_items = []
+                if this_selection.size > 0:
+                    scatter_selected = _plot_features_single_cluster(spike_features.features[this_selection, :][:, dims], colors[i_cluster], plt)
+                    this_items.append(scatter_selected)
+                if this_not_selected.size > 0:
+                    scatter_not_selected = _plot_features_single_cluster(spike_features.features[this_not_selected, :][:, dims], QColor('black'), plt)
+                    this_items.append(scatter_not_selected)
+                items.append(this_items)
 
     plt.setLabel('bottom', xlabel)
     plt.setLabel('left', ylabel)
@@ -209,14 +223,16 @@ def plot_features(spike_features: SpikeFeatures, plt: pg.PlotItem, labels: np.nd
     return plt, items
 
 
-def _plot_features_single_cluster(color, features, items, plt):
+def _plot_features_single_cluster(features, color, plt):
     pen = pg.mkPen(color)
     brush = pg.mkBrush(color)
     scatter = pg.ScatterPlotItem(pos=features, pen=pen, brush=brush, size=2)
     QGraphicsItem.setData(scatter, DATA_PEN, pen)
     QGraphicsItem.setData(scatter, DATA_BRUSH, brush)
     plt.addItem(scatter)
-    items.append([scatter])
+
+    return scatter
+    # items.append([scatter])
 
 
 def _get_or_create_app():
