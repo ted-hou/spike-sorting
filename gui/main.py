@@ -95,7 +95,7 @@ class MainWindow(QMainWindow):
         self.clusterSelector.load(data=self.spikeData[i], features=self.spikeFeatures[i], labels=self.spikeLabels[i], seed=12345+i)
         self.featuresPlot.clear()
         self.featuresPlot.load(self.spikeData[i], self.spikeFeatures[i])
-        self.featuresPlot.plot(self.clusterSelector.model().rootItem.leaves())
+        self.featuresPlot.onClustersAdded(self.clusterSelector.model().rootItem.leaves())
 
     def load(self, spikeData: list[SpikeData], spikeFeatures: list[SpikeFeatures], spikeLabels: list[np.ndarray]):
         self.spikeData = spikeData

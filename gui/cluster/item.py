@@ -49,7 +49,10 @@ class ClusterItem(ABC):
         return np.array_equal(self.indices, other.indices)
 
     def __hash__(self):
-        return hash(self.indices.tobytes())
+        if self.indices is None:
+            return hash(self.indices)
+        else:
+            return hash(self.indices.tobytes())
 
     def __ne__(self, other):
         return not(self == other)

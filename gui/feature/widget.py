@@ -24,7 +24,17 @@ class FeaturesPlot(QWidget):
     selection: np.ndarray = None
     selectionChanged = pyqtSignal(np.ndarray)
 
-    _cachedClusters = None
+    _cachedClusters: set[ClusterItem] = None
+
+    def cacheClusters(self, clusters: typing.Iterable[ClusterItem]):
+        if self._cachedClusters is not None:
+            self._cachedClusters.update(clusters)
+        else:
+            self._cachedClusters = set(clusters)
+
+    def uncacheClusters(self, clusters: typing.Iterable):
+        if self._cachedClusters is not None:
+            self._cachedClusters.difference_update(clusters)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -76,10 +86,9 @@ class FeaturesPlot(QWidget):
         self.xzPlot.clear()
         self.yzPlot.clear()
 
-    def plot(self, clusters: typing.Sequence[ClusterItem], selection: np.ndarray = None, data: SpikeData = None, features: SpikeFeatures = None):
+    def plot(self, clusters: typing.Iterable[ClusterItem], selection: np.ndarray = None, data: SpikeData = None, features: SpikeFeatures = None):
         data = self.data if data is None else data
         features = self.features if features is None else features
-        self._cachedClusters = clusters
 
         indices = [cluster.indices for cluster in clusters]
         colors = [cluster.color for cluster in clusters]
@@ -109,13 +118,13 @@ class FeaturesPlot(QWidget):
         # Set visibility
         self.onVisibilityChanged(clusters)
 
-    def onVisibilityChanged(self, clusters: typing.Sequence[ClusterItem]):
+    def onVisibilityChanged(self, clusters: typing.Iterable[ClusterItem]):
         for cluster in clusters:
             if cluster in self.plotItems:
                 for item in self.plotItems[cluster]:
                     item.setVisible(cluster.visible)
 
-    def onColorChanged(self, clusters: typing.Sequence[ClusterItem]):
+    def onColorChanged(self, clusters: typing.Iterable[ClusterItem]):
         """Change color but keep alpha."""
         for cluster in clusters:
             if cluster in self.plotItems:
@@ -132,14 +141,16 @@ class FeaturesPlot(QWidget):
                         brush.setColor(color)
                         item.setBrush(brush)
 
-    def onClustersAdded(self, clusters: typing.Sequence[ClusterItem]):
+    def onClustersAdded(self, clusters: typing.Iterable[ClusterItem]):
         # Only plot leaf items if tree nodes are given
         clusters = [c for c in clusters if c.isLeaf()]
+        self.cacheClusters(clusters)
         # print(f'Adding to {len(clusters)} plot:', *[c.name for c in clusters])
         self.plot(clusters)
 
-    def onClustersRemoved(self, clusters: typing.Sequence[ClusterItem]):
+    def onClustersRemoved(self, clusters: typing.Iterable[ClusterItem]):
         # print(f'Removing {len(clusters)} from plot:', *[c.name for c in clusters])
+        self.uncacheClusters(clusters)
         for cluster in clusters:
             if cluster in self.plotItems:
                 for item in self.plotItems[cluster]:

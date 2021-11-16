@@ -59,7 +59,8 @@ class PolygonROI(ROI):
             ev.accept()
             pos = self.getViewBox().mapSceneToView(ev.scenePos())
             self.addFreeHandle(pos)
-        elif ev.button() == Qt.MouseButton.RightButton:
+        elif ev.button() == Qt.MouseButton.RightButton and len(self.handles) > 1:
+            print(len(self.handles), '\n', *self.handles)
             ev.accept()
             self.removeHandle(self.handles[-1]['item'])
             self.moveLastPoint(ev.scenePos())
@@ -78,6 +79,7 @@ class PolygonROI(ROI):
 
     def completeDrawing(self):
         """Call to finish drawing the polygon."""
+        self.removeHandle(self.handles[-1]['item'])
         self._scene.sigMouseMoved.disconnect(self.moveLastPoint)
         self._scene.sigMouseClicked.disconnect(self.addOrRemovePoint)
         self.getViewBox().setMenuEnabled(self._menuEnabled)
