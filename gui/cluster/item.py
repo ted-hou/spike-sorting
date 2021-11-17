@@ -74,6 +74,8 @@ class ClusterTreeItem(ClusterItem):
     _indices: np.ndarray | None
     _cachedIndices: np.ndarray | None
     _unassignedIndices: np.ndarray | None
+    _selection: np.ndarray | None
+    _cachedSelectedIndices: np.ndarray | None
     _dirty: bool
     _colorRange: ColorRange
 
@@ -86,6 +88,8 @@ class ClusterTreeItem(ClusterItem):
         self._indices = indices
         self._cachedIndices = None
         self._unassignedIndices = None
+        self._selection = None
+        self._cachedSelectedIndices = None
         self._dirty = True
         self._colorRange = ColorRange() if colorRange is None else colorRange
 
@@ -189,6 +193,25 @@ class ClusterTreeItem(ClusterItem):
         self._unassignedIndices = None
         return value
 
+    def setSelection(self, selection: np.ndarray):
+        self._selection = selection
+
+        for c in self._children:
+            c.setSelection(selection)
+
+        if selection is None:
+            self._cachedSelectedIndices = None
+        else:
+            self._cachedSelectedIndices = np.intersect1d(self.indices, np.where(selection))
+
+    @property
+    def selectedIndices(self):
+        return self._cachedSelectedIndices
+
+    @property
+    def selectedSize(self):
+        return self.size if self.selectedIndices is None else self.selectedIndices.size
+
     @property
     def dirty(self) -> bool:
         """True if indices needs updating. This is flagged when a child item is added or removed, or when indices are
@@ -197,6 +220,8 @@ class ClusterTreeItem(ClusterItem):
 
     @dirty.setter
     def dirty(self, value: bool):
+        if value:
+            self.setSelection(self._selection)
         self._dirty = value
 
     @property

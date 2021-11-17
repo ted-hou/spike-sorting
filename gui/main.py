@@ -80,6 +80,9 @@ class MainWindow(QMainWindow):
         model.itemsAdded.connect(self.featuresPlot.onClustersAdded)
         model.itemsRemoved.connect(self.featuresPlot.onClustersRemoved)
 
+        # Handle selection changed
+        self.featuresPlot.selectionChanged.connect(model.onSelectionChanged)
+
         # Menus
         self.fileActions = self.createActions()
         self.toolbar = self.createToolbar("File", self.fileActions.values())

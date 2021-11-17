@@ -91,6 +91,9 @@ class PolygonROI(ROI):
         return self._completed
 
     def contains_points(self, points: np.ndarray) -> np.ndarray:
+        """
+        :return: NumPy array of bool values, indicating whether each index is selected.
+        """
         p = path.Path([(hInfo['pos'].x(), hInfo['pos'].y()) for hInfo in self.handles])
         return p.contains_points(points)
 

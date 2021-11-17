@@ -207,7 +207,7 @@ class FeaturesPlot(QWidget):
     _plotRefreshInterval = 1/120 * 10e9
     _lastPlotRefresh = 0
 
-    def onSelectionChanged(self, selection):
+    def onSelectionChanged(self, selection: np.ndarray):
         self.selection = selection
 
         # Update plots

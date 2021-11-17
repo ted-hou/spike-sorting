@@ -1,5 +1,7 @@
 from __future__ import annotations  # allows TreeItem type hint in its own constructor
 import typing
+
+import numpy as np
 from PyQt6.QtCore import QAbstractItemModel, pyqtSignal, QModelIndex, Qt, QVariant, QMimeData, QByteArray, QDataStream, \
     QIODevice
 from PyQt6.QtWidgets import QWidget
@@ -12,6 +14,7 @@ class ClusterTreeModel(QAbstractItemModel):
     from spikefeatures import SpikeFeatures
     spikeData: SpikeData | None
     spikeFeatures: SpikeFeatures | None
+    spikeSelection: np.ndarray | None  # array of booleans, indicating whether each spike is selected
     rootItem: ClusterTreeItem
     _mimeType = "application/vnd.text.list"
 
@@ -90,7 +93,7 @@ class ClusterTreeModel(QAbstractItemModel):
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = None):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return f"{self.rootItem.size} classified, {self.rootItem.unassignedSize} unassigned"
+            return f"{self.rootItem.selectedSize}/{self.rootItem.size} classified, {self.rootItem.unassignedSize} unassigned"
         return QVariant()
 
     def data(self, index: QModelIndex, role=None):
@@ -99,7 +102,7 @@ class ClusterTreeModel(QAbstractItemModel):
 
         item: ClusterTreeItem = index.internalPointer()
         if role == Qt.ItemDataRole.DisplayRole:
-            return f"{item.name} ({item.size})" if item.isLeaf() else f"{item.name} ({item.size}, group)"
+            return f"{item.name} ({item.selectedSize}/{item.size})" if item.isLeaf() else f"{item.name} ({item.selectedSize}/{item.size}, group)"
         elif role == Qt.ItemDataRole.EditRole:
             return item.name
         elif role == Qt.ItemDataRole.ToolTipRole:
@@ -548,3 +551,8 @@ class ClusterTreeModel(QAbstractItemModel):
         self.recolorChildItems(self.rootItem)
 
         return True
+
+    def onSelectionChanged(self, selection):
+        self.rootItem.setSelection(selection)
+        self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, 0)
+        self.dataChanged.emit(QModelIndex(), QModelIndex(), [Qt.ItemDataRole.DisplayRole])
