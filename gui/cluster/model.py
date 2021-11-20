@@ -553,6 +553,6 @@ class ClusterTreeModel(QAbstractItemModel):
         return True
 
     def onSelectionChanged(self, selection):
-        self.rootItem.setSelection(selection)
+        self.rootItem.setSelectionMask(selection)
         self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, 0)
         self.dataChanged.emit(QModelIndex(), QModelIndex(), [Qt.ItemDataRole.DisplayRole])

@@ -31,6 +31,30 @@ class ClusterItem(ABC):
 
     @property
     @abstractmethod
+    def selectedIndices(self) -> np.ndarray:
+        ...
+
+    @property
+    @abstractmethod
+    def selectedSize(self) -> int:
+        ...
+
+    @abstractmethod
+    def setSelectionMask(self, selectionMask: np.ndarray):
+        ...
+
+    @property
+    @abstractmethod
+    def globalSelectionMask(self):
+        ...
+
+    @property
+    @abstractmethod
+    def localSelectionMask(self):
+        ...
+
+    @property
+    @abstractmethod
     def color(self) -> QColor:
         ...
 
@@ -74,7 +98,8 @@ class ClusterTreeItem(ClusterItem):
     _indices: np.ndarray | None
     _cachedIndices: np.ndarray | None
     _unassignedIndices: np.ndarray | None
-    _selection: np.ndarray | None
+    _globalSelectionMask: np.ndarray | None
+    _localSelectionMask: np.ndarray | None
     _cachedSelectedIndices: np.ndarray | None
     _dirty: bool
     _colorRange: ColorRange
@@ -88,7 +113,7 @@ class ClusterTreeItem(ClusterItem):
         self._indices = indices
         self._cachedIndices = None
         self._unassignedIndices = None
-        self._selection = None
+        self._globalSelectionMask = None
         self._cachedSelectedIndices = None
         self._dirty = True
         self._colorRange = ColorRange() if colorRange is None else colorRange
@@ -193,16 +218,26 @@ class ClusterTreeItem(ClusterItem):
         self._unassignedIndices = None
         return value
 
-    def setSelection(self, selection: np.ndarray):
-        self._selection = selection
+    def setSelectionMask(self, selectionMask: np.ndarray):
+        self._globalSelectionMask = selectionMask
 
         for c in self._children:
-            c.setSelection(selection)
+            c.setSelectionMask(selectionMask)
 
-        if selection is None:
+        if selectionMask is None:
             self._cachedSelectedIndices = None
+            self._localSelectionMask = None
         else:
-            self._cachedSelectedIndices = np.intersect1d(self.indices, np.where(selection))
+            self._cachedSelectedIndices = np.intersect1d(self.indices, np.where(selectionMask))
+            self._localSelectionMask = selectionMask[self.indices]
+
+    @property
+    def globalSelectionMask(self):
+        return self._globalSelectionMask
+
+    @property
+    def localSelectionMask(self):
+        return self._localSelectionMask
 
     @property
     def selectedIndices(self):
@@ -221,7 +256,7 @@ class ClusterTreeItem(ClusterItem):
     @dirty.setter
     def dirty(self, value: bool):
         if value:
-            self.setSelection(self._selection)
+            self.setSelectionMask(self._globalSelectionMask)
         self._dirty = value
 
     @property

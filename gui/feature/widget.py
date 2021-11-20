@@ -86,7 +86,7 @@ class FeaturesPlot(QWidget):
         self.xzPlot.clear()
         self.yzPlot.clear()
 
-    def plot(self, clusters: typing.Iterable[ClusterItem], selection: np.ndarray = None, data: SpikeData = None, features: SpikeFeatures = None):
+    def plot(self, clusters: typing.Sequence[ClusterItem], selection: np.ndarray = None, data: SpikeData = None, features: SpikeFeatures = None):
         data = self.data if data is None else data
         features = self.features if features is None else features
 
@@ -103,14 +103,24 @@ class FeaturesPlot(QWidget):
                 plotItemsList[i].extend(waveformItems[i])
             # self.plotItems.update(zip(spikeClusters, waveformItems))
         if features is not None:
-            _, xyItems = plot_features(features, dims='xy', indices=indices, selection=selection, colors=colors, plt=self.xyPlot)
-            _, xzItems = plot_features(features, dims='xz', indices=indices, selection=selection, colors=colors, plt=self.xzPlot)
-            _, yzItems = plot_features(features, dims='yz', indices=indices, selection=selection, colors=colors, plt=self.yzPlot)
+            from .plotitem import FeaturePlotItem
+            for i in range(len(clusters)):
+                xyItem = FeaturePlotItem(features.features, cluster=clusters[i], selectionMask=selection, dims='xy')
+                xzItem = FeaturePlotItem(features.features, cluster=clusters[i], selectionMask=selection, dims='xz')
+                yzItem = FeaturePlotItem(features.features, cluster=clusters[i], selectionMask=selection, dims='yz')
+                self.xyPlot.addItem(xyItem)
+                self.xzPlot.addItem(xzItem)
+                self.yzPlot.addItem(yzItem)
+                plotItemsList[i].extend((xyItem, xzItem, yzItem))
             self.autoRange(features=True, waveforms=False)
-            for i in range(len(plotItemsList)):
-                plotItemsList[i].extend(xyItems[i])
-                plotItemsList[i].extend(xzItems[i])
-                plotItemsList[i].extend(yzItems[i])
+            # _, xyItems = plot_features(features, dims='xy', indices=indices, selection=selection, colors=colors, plt=self.xyPlot)
+            # _, xzItems = plot_features(features, dims='xz', indices=indices, selection=selection, colors=colors, plt=self.xzPlot)
+            # _, yzItems = plot_features(features, dims='yz', indices=indices, selection=selection, colors=colors, plt=self.yzPlot)
+            # self.autoRange(features=True, waveforms=False)
+            # for i in range(len(plotItemsList)):
+            #     plotItemsList[i].extend(xyItems[i])
+            #     plotItemsList[i].extend(xzItems[i])
+            #     plotItemsList[i].extend(yzItems[i])
 
         # Store list to dictionary
         self.plotItems.update(zip(clusters, plotItemsList))
